@@ -10,7 +10,15 @@ class EyeEngine
 {
 public:
 
+    //------------------------------------
+    // Constructor
+    //------------------------------------
+
     EyeEngine(SH1106 &display);
+
+    //------------------------------------
+    // Engine
+    //------------------------------------
 
     void begin();
 
@@ -18,45 +26,93 @@ public:
 
     void draw();
 
+    //------------------------------------
+    // Eye Control
+    //------------------------------------
+
     void look(float x, float y);
+
+    void setTarget(float x, float y);
 
     void center();
 
+    //------------------------------------
+    // Tracking
+    //------------------------------------
+
+    void enableTracking(bool state);
+
+    bool trackingEnabled() const;
+
+    //------------------------------------
+    // Blink
+    //------------------------------------
+
     void blink();
 
+    //------------------------------------
+    // Idle
+    //------------------------------------
+
     void enableIdle(bool state);
+
+    //------------------------------------
+    // Current Position
+    //------------------------------------
+
+    float getX() const;
+
+    float getY() const;
+
+    //------------------------------------
+    // Target Position
+    //------------------------------------
+
+    float getTargetX() const;
+
+    float getTargetY() const;
 
 private:
 
     Graphics graphics;
 
     //------------------------------------
-    // Eye Position
+    // Current Eye Position
     //------------------------------------
 
-    float pupilX;
-    float pupilY;
+    float pupilX = 0.0f;
+    float pupilY = 0.0f;
 
-    float targetX;
-    float targetY;
+    //------------------------------------
+    // Target Position
+    //------------------------------------
+
+    float targetX = 0.0f;
+    float targetY = 0.0f;
+
+    //------------------------------------
+    // Tracking
+    //------------------------------------
+
+    bool tracking = false;
 
     //------------------------------------
     // Blink
     //------------------------------------
 
-    int blinkHeight;
+    int blinkHeight = 0;
 
-    bool blinking;
+    bool blinking = false;
 
     //------------------------------------
-    // Idle Movement
+    // Idle
     //------------------------------------
 
-    bool idleEnabled;
+    bool idleEnabled = true;
 
-    unsigned long lastBlink;
+    unsigned long lastBlink = 0;
 
-    unsigned long lastMove;
+    unsigned long lastMove = 0;
 
     //------------------------------------
     // Internal

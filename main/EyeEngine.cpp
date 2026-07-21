@@ -1,21 +1,8 @@
 #include "EyeEngine.h"
-
+// constructor
 EyeEngine::EyeEngine(SH1106 &display)
     : graphics(display)
 {
-    pupilX = 0;
-    pupilY = 0;
-
-    targetX = 0;
-    targetY = 0;
-
-    blinkHeight = 0;
-
-    blinking = false;
-    idleEnabled = true;
-
-    lastBlink = 0;
-    lastMove = 0;
 }
 
 void EyeEngine::begin()
@@ -27,17 +14,38 @@ void EyeEngine::begin()
     lastBlink = millis();
     lastMove = millis();
 }
-
+// look()
 void EyeEngine::look(float x, float y)
 {
-    targetX = x;
-    targetY = y;
-}
+    tracking = true;
+    idleEnabled = false;
 
+    targetX = constrain(x, -10.0f, 10.0f);
+    targetY = constrain(y, -6.0f, 6.0f);
+}
+void EyeEngine::setTarget(float x, float y)
+{
+    targetX = constrain(x, -10.0f, 10.0f);
+    targetY = constrain(y, -6.0f, 6.0f);
+}
+//center
 void EyeEngine::center()
 {
-    targetX = 0;
-    targetY = 0;
+    tracking = false;
+    idleEnabled = true;
+
+    targetX = 0.0f;
+    targetY = 0.0f;
+}
+void EyeEngine::enableTracking(bool state)
+{
+    tracking = state;
+    idleEnabled = !state;
+}
+
+bool EyeEngine::trackingEnabled() const
+{
+    return tracking;
 }
 
 void EyeEngine::enableIdle(bool state)
@@ -71,10 +79,13 @@ void EyeEngine::randomMovement()
         lastMove = millis();
     }
 }
-
+//update
 void EyeEngine::update()
 {
-    randomMovement();
+    if(!tracking)
+    {
+        randomMovement();
+    }
 
     smoothMovement();
 
@@ -124,4 +135,23 @@ void EyeEngine::draw()
         pupilY,
         blinkHeight
     );
+}
+float EyeEngine::getX() const
+{
+    return pupilX;
+}
+
+float EyeEngine::getY() const
+{
+    return pupilY;
+}
+
+float EyeEngine::getTargetX() const
+{
+    return targetX;
+}
+
+float EyeEngine::getTargetY() const
+{
+    return targetY;
 }

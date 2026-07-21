@@ -1,7 +1,7 @@
 #ifndef FACE_TRACKER_H
 #define FACE_TRACKER_H
 
-#include <Arduino.h>
+#include <cstdint>
 #include "esp_camera.h"
 
 class FaceTracker
@@ -22,25 +22,37 @@ public:
 
     bool update(camera_fb_t* frame);
 
+    void reset();
+
     //---------------------------------------
-    // Status
+    // Detection Status
     //---------------------------------------
 
     bool faceDetected() const;
 
     //---------------------------------------
-    // Eye Coordinates
+    // Face Information
+    //---------------------------------------
+
+    int getFaceX() const;
+
+    int getFaceY() const;
+
+    int getFaceWidth() const;
+
+    int getFaceHeight() const;
+
+    int getFaceCenterX() const;
+
+    int getFaceCenterY() const;
+
+    //---------------------------------------
+    // Eye Target
     //---------------------------------------
 
     float getEyeX() const;
 
     float getEyeY() const;
-
-    //---------------------------------------
-    // Reset
-    //---------------------------------------
-
-    void reset();
 
 private:
 
@@ -48,17 +60,31 @@ private:
     // Detection Status
     //---------------------------------------
 
-    bool detected;
+    bool faceFound = false;
+
+    //---------------------------------------
+    // Face Bounding Box
+    //---------------------------------------
+
+    int faceX = 0;
+    int faceY = 0;
+
+    int faceWidth = 0;
+    int faceHeight = 0;
 
     //---------------------------------------
     // Eye Target
+    //
+    // Normalized coordinates
+    // X : -1.0 (Left)  -> +1.0 (Right)
+    // Y : -1.0 (Up)    -> +1.0 (Down)
     //---------------------------------------
 
-    float eyeX;
-    float eyeY;
+    float eyeX = 0.0f;
+    float eyeY = 0.0f;
 
     //---------------------------------------
-    // Internal
+    // Internal Functions
     //---------------------------------------
 
     bool processFrame(camera_fb_t* frame);

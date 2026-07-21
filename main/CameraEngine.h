@@ -1,7 +1,7 @@
 #ifndef CAMERA_ENGINE_H
 #define CAMERA_ENGINE_H
 
-#include <Arduino.h>
+#include <cstdint>
 #include "esp_camera.h"
 
 class CameraEngine
@@ -22,14 +22,19 @@ public:
 
     bool isReady() const;
 
-    //---------------------------------------
-    // Frame Capture
-    //---------------------------------------
+   //---------------------------------------
+   // Update
+   //---------------------------------------
 
-    camera_fb_t* captureFrame();
+     void update();
 
-    void releaseFrame(camera_fb_t* frame);
+   //---------------------------------------
+   // Frame Capture
+   //---------------------------------------
 
+   camera_fb_t* captureFrame();
+
+   void releaseFrame(camera_fb_t* frame);
     //---------------------------------------
     // Camera Information
     //---------------------------------------
@@ -43,7 +48,7 @@ public:
     sensor_t* getSensor();
 
 private:
-    sensor_t* sensor;
+    sensor_t* sensor = nullptr;
     //---------------------------------------
     // Status
     //---------------------------------------
@@ -54,7 +59,8 @@ private:
     // Camera Configuration
     //---------------------------------------
 
-    camera_config_t config;
+    camera_config_t config = {};
+    uint32_t frameCounter = 0;
 
     //---------------------------------------
     // Cached Information

@@ -2,11 +2,14 @@
   "configurations": [
     {
       "name": "ESP-IDF",
-      "compilerPath": "C:\\Espressif\\tools\\xtensa-esp-elf\\esp-14.2.0_20260121\\xtensa-esp-elf\\bin\\xtensa-esp32-elf-gcc.exe",
-      "compileCommands": "${config:idf.buildPath}/compile_commands.json",
+      "compilerPath": "C:\\Espressif\\tools\\xtensa-esp-elf\\esp-14.2.0_20260121\\xtensa-esp-elf\\bin\\xtensa-esp32s3-elf-gcc.exe",
+      "compileCommands": [
+        "${config:idf.buildPath}/compile_commands.json"
+      ],
       "intelliSenseMode": "gcc-x86",
       "includePath": [
-        "${workspaceFolder}/**"
+        "${workspaceFolder}/**",
+        "C:/esp/.espressif/v5.5.4/esp-idf/components/esp_driver_ledc/include"
       ],
       "browse": {
         "path": [

@@ -1,7 +1,11 @@
 #include "CameraEngine.h"
 
-#include <Arduino.h>
+#include "esp_log.h"
+#include <string.h>
 #include "esp_camera.h"
+
+
+static const char *TAG = "CameraEngine";
 
 //
 // Camera Pin Mapping
@@ -32,15 +36,7 @@
 // Constructor
 //----------------------------------------------------
 
-CameraEngine::CameraEngine()
-{
-    initialized = false;
-
-    width = 0;
-    height = 0;
-
-    pixelFormat = PIXFORMAT_JPEG;
-}
+CameraEngine::CameraEngine() {}
 
 //----------------------------------------------------
 // Initialize Camera Engine
@@ -48,14 +44,24 @@ CameraEngine::CameraEngine()
 
 bool CameraEngine::begin()
 {
-    Serial.println();
-    Serial.println("--------------------------------");
-    Serial.println("Starting Camera Engine...");
-    Serial.println("--------------------------------");
+    ESP_LOGI(TAG, "================================");
+    ESP_LOGI(TAG, "Starting Camera Engine...");
+    ESP_LOGI(TAG, "================================");
 
     setupConfig();
 
-    return initCamera();
+    bool success = initCamera();
+
+    if(success)
+    {
+        ESP_LOGI(TAG, "Camera Engine Started");
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Camera Engine Failed");
+    }
+
+    return success;
 }
 
 //----------------------------------------------------
@@ -135,77 +141,63 @@ void CameraEngine::setupConfig()
     // Memory Configuration
     //------------------------------------
 
-    if (psramFound())
-    {
-        Serial.println("PSRAM Detected");
+   //------------------------------------
+// Memory Configuration
+//------------------------------------
 
-        config.frame_size = FRAMESIZE_QVGA;
+ESP_LOGI(TAG, "Using PSRAM Frame Buffers");
 
-        width  = 320;
-        height = 240;
+config.frame_size = FRAMESIZE_QVGA;
 
-        config.jpeg_quality = 12;
+width  = 320;
+height = 240;
 
-        config.fb_count = 2;
+config.jpeg_quality = 15;
+config.fb_count = 1;
+config.fb_location = CAMERA_FB_IN_PSRAM;
+config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+//------------------------------------
+// Debug Information
+//------------------------------------
 
-        config.fb_location = CAMERA_FB_IN_PSRAM;
-
-        config.grab_mode = CAMERA_GRAB_LATEST;
-    }
-    else
-    {
-        Serial.println("PSRAM Not Found");
-
-        config.frame_size = FRAMESIZE_QQVGA;
-
-        width  = 160;
-        height = 120;
-
-        config.jpeg_quality = 15;
-
-        config.fb_count = 1;
-
-        config.fb_location = CAMERA_FB_IN_DRAM;
-
-        config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-    }
-
-    //------------------------------------
-    // Debug Information
-    //------------------------------------
-
-    Serial.print("Frame Size : ");
-    Serial.print(width);
-    Serial.print(" x ");
-    Serial.println(height);
-
-    Serial.print("Frame Buffers : ");
-    Serial.println(config.fb_count);
-
-    Serial.print("JPEG Quality : ");
-    Serial.println(config.jpeg_quality);
+ESP_LOGI(TAG, "Frame Size    : %d x %d", width, height);
+ESP_LOGI(TAG, "Frame Buffers : %d", config.fb_count);
+ESP_LOGI(TAG, "JPEG Quality  : %d", config.jpeg_quality);
 }
+
 //----------------------------------------------------
 // Initialize Camera
 //----------------------------------------------------
 
 bool CameraEngine::initCamera()
 {
-    Serial.println("Initializing Camera...");
+    ESP_LOGI(TAG, "Initializing Camera...");
 
     esp_err_t err = esp_camera_init(&config);
+    sensor = esp_camera_sensor_get();
+
+if (sensor == nullptr)
+{
+    ESP_LOGE(TAG, "Unable to detect camera sensor");
+    initialized = false;
+    return false;
+}
+
+ESP_LOGI(TAG, "Camera Sensor PID: 0x%04X", sensor->id.PID);
+
+sensor->set_pixformat(sensor, PIXFORMAT_JPEG);
+sensor->set_framesize(sensor, FRAMESIZE_QVGA);
 
     if (err != ESP_OK)
     {
-        Serial.print("Camera Initialization Failed! Error : 0x");
-        Serial.println(err, HEX);
+        ESP_LOGE(TAG, "Camera Initialization Failed! Error: 0x%x", err);
 
         initialized = false;
 
         return false;
     }
 
-    Serial.println("Camera Initialized Successfully");
+    ESP_LOGI(TAG, "Camera Initialized Successfully");
 
     //------------------------------------
     // Get Camera Sensor
@@ -213,39 +205,43 @@ bool CameraEngine::initCamera()
 
     sensor = esp_camera_sensor_get();
 
-    if(sensor == nullptr)
-    {
-        Serial.println("Unable to Detect Camera Sensor");
+if (sensor == nullptr)
+{
+    ESP_LOGE(TAG, "Unable to detect camera sensor");
 
-        initialized = false;
+    initialized = false;
 
-        return false;
-    }
+    return false;
+}
 
-    Serial.println("Camera Sensor Found");
-        //------------------------------------
-    // Detect Sensor
-    //------------------------------------
+ESP_LOGI(TAG, "Camera Sensor Found");
 
-    switch(sensor->id.PID)
-    {
-        case OV2640_PID:
-            Serial.println("Sensor : OV2640");
-            break;
+//------------------------------------
+// Detect Sensor
+//------------------------------------
 
-        case OV3660_PID:
-            Serial.println("Sensor : OV3660");
-            break;
+switch (sensor->id.PID)
+{
+    case OV2640_PID:
+        ESP_LOGI(TAG, "Sensor : OV2640");
+        break;
 
-        case OV5640_PID:
-            Serial.println("Sensor : OV5640");
-            break;
+    case OV3660_PID:
+        ESP_LOGI(TAG, "Sensor : OV3660");
+        break;
 
-        default:
-            Serial.print("Unknown Sensor PID : ");
-            Serial.println(sensor->id.PID, HEX);
-            break;
-    }
+    case OV5640_PID:
+        ESP_LOGI(TAG, "Sensor : OV5640");
+        break;
+
+    default:
+        ESP_LOGW(
+            TAG,
+            "Unknown Sensor PID : 0x%04X",
+            sensor->id.PID
+        );
+        break;
+}
         //------------------------------------
     // Sensor Settings
     //------------------------------------
@@ -260,39 +256,75 @@ bool CameraEngine::initCamera()
 
     sensor->set_whitebal(sensor, 1);
 
-    sensor->set_gain_ctrl(sensor, 1);// may be have to remove this
-
-    sensor->set_exposure_ctrl(sensor, 1);// may be have to remove this
-        //------------------------------------
+    
+    //------------------------------------
     // Final Status
     //------------------------------------
 
     initialized = true;
 
-    Serial.println("--------------------------------");
-    Serial.println("Camera Ready");
-    Serial.println("--------------------------------");
+    ESP_LOGI(TAG, "--------------------------------");
+    ESP_LOGI(TAG, "Camera Ready");
+    ESP_LOGI(TAG, "--------------------------------");
 
     return true;
 }
 //----------------------------------------------------
 // Capture Camera Frame
+//
+//camera_fb_t* CameraEngine::captureFrame()
+//{
+ //   if(!initialized)
+   // {
+     //   ESP_LOGE(TAG, "Camera not initialized.");
+//
+  //      return nullptr;
+    //}
+//
+  //  camera_fb_t* frame = esp_camera_fb_get();
+//
+  //  if(frame == nullptr)
+   //{
+     //   ESP_LOGE(TAG, "Failed to capture frame.");
+  // }
+//
+  //  return frame;
+//}
 //----------------------------------------------------
-
+// this is temporary for testing the upper one is real 
 camera_fb_t* CameraEngine::captureFrame()
 {
-    if(!initialized)
+    if (!initialized)
     {
-        Serial.println("Camera not initialized.");
-
+        ESP_LOGE(TAG, "Camera not initialized.");
         return nullptr;
     }
 
     camera_fb_t* frame = esp_camera_fb_get();
 
-    if(frame == nullptr)
+    if (frame == nullptr)
     {
-        Serial.println("Failed to capture frame.");
+        ESP_LOGE(TAG, "Failed to capture frame.");
+        return nullptr;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "Captured: format=%d, size=%dx%d, len=%u",
+        frame->format,
+        frame->width,
+        frame->height,
+        frame->len
+    );
+
+    if (frame->format == PIXFORMAT_JPEG && frame->len >= 2)
+    {
+        ESP_LOGI(
+            TAG,
+            "JPEG Header: %02X %02X",
+            frame->buf[0],
+            frame->buf[1]
+        );
     }
 
     return frame;
@@ -339,4 +371,39 @@ pixformat_t CameraEngine::getPixelFormat() const
 sensor_t* CameraEngine::getSensor()
 {
     return sensor;
+}
+//----------------------------------------------------
+// Update
+//----------------------------------------------------
+
+void CameraEngine::update()
+{
+    if (!initialized)
+    {
+        return;
+    }
+
+    camera_fb_t* frame = captureFrame();
+
+    if (frame == nullptr)
+    {
+        return;
+    }
+
+    frameCounter++;
+
+    if ((frameCounter % 30) == 0)
+    {
+        ESP_LOGI(
+            TAG,
+            "Frame %lu : %dx%d Size=%u bytes",
+            (unsigned long)frameCounter,
+            frame->width,
+            frame->height,
+            frame->len
+        );
+    }
+
+    releaseFrame(frame);
+    frame = nullptr;
 }
