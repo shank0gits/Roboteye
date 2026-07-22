@@ -2,17 +2,24 @@
 #define FACE_TRACKER_H
 
 #include <cstdint>
+
 #include "esp_camera.h"
+
+#include "human_face_detect.hpp"
+
+#include "dl_image_define.hpp"
 
 class FaceTracker
 {
 public:
 
     //---------------------------------------
-    // Constructor
+    // Constructor / Destructor
     //---------------------------------------
 
     FaceTracker();
+
+    ~FaceTracker();
 
     //---------------------------------------
     // Control
@@ -57,6 +64,12 @@ public:
 private:
 
     //---------------------------------------
+    // Face Detector
+    //---------------------------------------
+
+    HumanFaceDetect* detector = nullptr;
+
+    //---------------------------------------
     // Detection Status
     //---------------------------------------
 
@@ -67,20 +80,19 @@ private:
     //---------------------------------------
 
     int faceX = 0;
+
     int faceY = 0;
 
     int faceWidth = 0;
+
     int faceHeight = 0;
 
     //---------------------------------------
     // Eye Target
-    //
-    // Normalized coordinates
-    // X : -1.0 (Left)  -> +1.0 (Right)
-    // Y : -1.0 (Up)    -> +1.0 (Down)
     //---------------------------------------
 
     float eyeX = 0.0f;
+
     float eyeY = 0.0f;
 
     //---------------------------------------

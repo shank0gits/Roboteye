@@ -1,11 +1,15 @@
 #include "FaceTracker.h"
 
 #include "esp_log.h"
-#include "esp_camera.h"
+
+#include "dl_image_jpeg.hpp"
 
 #include <algorithm>
 
+#include "esp_heap_caps.h"
+
 static const char* TAG = "FaceTracker";
+
 
 //----------------------------------------------------
 // Constructor
@@ -18,16 +22,60 @@ FaceTracker::FaceTracker()
 
 
 //----------------------------------------------------
+// Destructor
+//----------------------------------------------------
+
+FaceTracker::~FaceTracker()
+{
+    if (detector != nullptr)
+    {
+        delete detector;
+
+        detector = nullptr;
+    }
+}
+
+
+//----------------------------------------------------
 // Initialize
 //----------------------------------------------------
 
 bool FaceTracker::begin()
 {
-    ESP_LOGI(TAG, "Initializing Face Tracker...");
+    ESP_LOGI(
+        TAG,
+        "Initializing Face Tracker..."
+    );
 
     reset();
 
-    ESP_LOGI(TAG, "Face Tracker Ready");
+    //-----------------------------------------------
+    // Create Human Face Detector
+    //-----------------------------------------------
+
+    detector = new HumanFaceDetect(
+        HumanFaceDetect::ESPDET_PICO_224_224_FACE
+    );
+
+    if (detector == nullptr)
+    {
+        ESP_LOGE(
+            TAG,
+            "Failed to create HumanFaceDetect"
+        );
+
+        return false;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "HumanFaceDetect initialized"
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Face Tracker Ready"
+    );
 
     return true;
 }
@@ -46,6 +94,18 @@ bool FaceTracker::update(camera_fb_t* frame)
         return false;
     }
 
+    if (detector == nullptr)
+    {
+        ESP_LOGE(
+            TAG,
+            "Face detector is not initialized"
+        );
+
+        reset();
+
+        return false;
+    }
+
     return processFrame(frame);
 }
 
@@ -54,7 +114,9 @@ bool FaceTracker::update(camera_fb_t* frame)
 // Process Camera Frame
 //----------------------------------------------------
 
-bool FaceTracker::processFrame(camera_fb_t* frame)
+bool FaceTracker::processFrame(
+    camera_fb_t* frame
+)
 {
     if (frame == nullptr)
     {
@@ -63,46 +125,101 @@ bool FaceTracker::processFrame(camera_fb_t* frame)
         return false;
     }
 
-    //------------------------------------------------
-    // Current frame information
-    //------------------------------------------------
+    //-----------------------------------------------
+    // We currently expect JPEG
+    //-----------------------------------------------
 
-    int frameWidth  = frame->width;
-    int frameHeight = frame->height;
+    if (frame->format != PIXFORMAT_JPEG)
+    {
+        ESP_LOGW(
+            TAG,
+            "Unsupported frame format: %d",
+            frame->format
+        );
+
+        reset();
+
+        return false;
+    }
+
+    //-----------------------------------------------
+    // Create ESP-DL JPEG Image
+    //-----------------------------------------------
+
+    dl::image::jpeg_img_t jpegImage;
+
+    jpegImage.data = frame->buf;
+
+    jpegImage.data_len = frame->len;
+
+//-----------------------------------------------
+// Decode JPEG
+//-----------------------------------------------
+
+ESP_LOGI(
+    TAG,
+    "Before JPEG decode: Free=%u, Largest=%u, PSRAM Free=%u, PSRAM Largest=%u",
+    heap_caps_get_free_size(MALLOC_CAP_8BIT),
+    heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+    heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+    heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)
+);
+
+dl::image::img_t image =
+    dl::image::sw_decode_jpeg(
+        jpegImage,
+        dl::image::DL_IMAGE_PIX_TYPE_RGB888
+    );
 
 
-    //------------------------------------------------
-    // TODO:
-    //
-    // Real ESP32-S3 face detection will be added here.
-    //
-    // Expected result:
-    //
-    // faceX
-    // faceY
-    // faceWidth
-    // faceHeight
-    //
-    // Then:
-    //
-    // faceFound = true;
-    //
-    // mapFaceToEye(
-    //     getFaceCenterX(),
-    //     getFaceCenterY(),
-    //     frameWidth,
-    //     frameHeight
-    // );
-    //------------------------------------------------
+//-----------------------------------------------
+// Check Decode Result
+//-----------------------------------------------
+
+if (image.data == nullptr)
+{
+    ESP_LOGE(
+        TAG,
+        "JPEG decode failed: Free=%u, Largest=%u, PSRAM Free=%u, PSRAM Largest=%u",
+        heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+        heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+        heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)
+    );
+
+    reset();
+
+    return false;
+}
+
+ESP_LOGI(
+    TAG,
+    "JPEG decoded successfully: %dx%d",
+    image.width,
+    image.height
+);
+
+    //-----------------------------------------------
+    // Run Face Detection
+    //-----------------------------------------------
+
+   std::list<dl::detect::result_t>& results =
+    detector->run(image);
+
+   
 
 
-    //------------------------------------------------
-    // Temporary:
-    // No face detection yet
-    //------------------------------------------------
+//-----------------------------------------------
+// No Face
+//-----------------------------------------------
 
-    (void)frameWidth;
-    (void)frameHeight;
+if (results.empty())
+{
+    if (image.data != nullptr)
+    {
+    heap_caps_free(image.data);
+        image.data = nullptr;
+    }
 
     reset();
 
@@ -110,82 +227,198 @@ bool FaceTracker::processFrame(camera_fb_t* frame)
 }
 
 
+//-----------------------------------------------
+// Get First Face
+//-----------------------------------------------
+
+const auto& face = results.front();
+
+
+//-----------------------------------------------
+// Save Face Coordinates
+//-----------------------------------------------
+
+faceX =
+    static_cast<int>(
+        face.box[0]
+    );
+
+faceY =
+    static_cast<int>(
+        face.box[1]
+    );
+
+faceWidth =
+    static_cast<int>(
+        face.box[2] - face.box[0]
+    );
+
+faceHeight =
+    static_cast<int>(
+        face.box[3] - face.box[1]
+    );
+
+ //-----------------------------------------------
+ // Free Decoded JPEG Image
+ //-----------------------------------------------
+
+if (image.data != nullptr)
+{
+    heap_caps_free(image.data);
+    image.data = nullptr;
+}
+
+
+
+//-----------------------------------------------
+// Save Image Dimensions
+//-----------------------------------------------
+
+int decodedWidth = image.width;
+int decodedHeight = image.height;
+
+
+    //-----------------------------------------------
+    // Validate Bounding Box
+    //-----------------------------------------------
+
+    if (faceWidth <= 0 ||
+        faceHeight <= 0)
+    {
+        reset();
+
+        return false;
+    }
+
+
+    //-----------------------------------------------
+    // Face Found
+    //-----------------------------------------------
+
+    faceFound = true;
+
+
+    //-----------------------------------------------
+    // Calculate Face Center
+    //-----------------------------------------------
+
+    int centerX =
+        getFaceCenterX();
+
+    int centerY =
+        getFaceCenterY();
+
+
+    //-----------------------------------------------
+    // Map Face Position
+    // To Eye Position
+    //-----------------------------------------------
+
+    mapFaceToEye(
+    centerX,
+    centerY,
+    decodedWidth,
+    decodedHeight
+);
+
+
+    //-----------------------------------------------
+    // Debug
+    //-----------------------------------------------
+
+    ESP_LOGI(
+        TAG,
+        "FACE FOUND "
+        "Box=(%d,%d,%d,%d) "
+        "Center=(%d,%d) "
+        "Eye=(%.2f,%.2f)",
+        faceX,
+        faceY,
+        faceWidth,
+        faceHeight,
+        centerX,
+        centerY,
+        eyeX,
+        eyeY
+    );
+
+
+    return true;
+}
+
+
 //----------------------------------------------------
-// Convert Face Position to Eye Position
+// Convert Face Position To Eye Position
 //----------------------------------------------------
 
 void FaceTracker::mapFaceToEye(
     int faceCenterX,
     int faceCenterY,
     int frameWidth,
-    int frameHeight)
+    int frameHeight
+)
 {
-    if (frameWidth <= 0 || frameHeight <= 0)
+    if (frameWidth <= 0 ||
+        frameHeight <= 0)
     {
         eyeX = 0.0f;
+
         eyeY = 0.0f;
 
         return;
     }
 
 
-    //------------------------------------------------
+    //-----------------------------------------------
     // Normalize X
-    //
-    // 0              = Left
-    // frameWidth/2   = Center
-    // frameWidth     = Right
-    //------------------------------------------------
+    //-----------------------------------------------
 
     float nx =
-        ((float)faceCenterX / (float)frameWidth)
-        * 2.0f
-        - 1.0f;
+        (
+            static_cast<float>(faceCenterX)
+            /
+            static_cast<float>(frameWidth)
+        )
+        *
+        2.0f
+        -
+        1.0f;
 
 
-    //------------------------------------------------
+    //-----------------------------------------------
     // Normalize Y
-    //
-    // 0              = Up
-    // frameHeight/2  = Center
-    // frameHeight     = Down
-    //------------------------------------------------
+    //-----------------------------------------------
 
     float ny =
-        ((float)faceCenterY / (float)frameHeight)
-        * 2.0f
-        - 1.0f;
+        (
+            static_cast<float>(faceCenterY)
+            /
+            static_cast<float>(frameHeight)
+        )
+        *
+        2.0f
+        -
+        1.0f;
 
 
-    //------------------------------------------------
-    // Convert to EyeEngine coordinate range
-    //------------------------------------------------
+    //-----------------------------------------------
+    // Convert To EyeEngine Coordinates
+    //-----------------------------------------------
 
-    eyeX = std::clamp(
-        nx * 10.0f,
-        -10.0f,
-        10.0f
-    );
-
-    eyeY = std::clamp(
-        ny * 6.0f,
-        -6.0f,
-        6.0f
-    );
+    eyeX =
+        std::clamp(
+            nx * 10.0f,
+            -10.0f,
+            10.0f
+        );
 
 
-    //------------------------------------------------
-    // Debug
-    //------------------------------------------------
-
-    ESP_LOGD(
-        TAG,
-        "Face Center: (%d,%d)  Eye Target: (%.2f, %.2f)",
-        faceCenterX,
-        faceCenterY,
-        eyeX,
-        eyeY
-    );
+    eyeY =
+        std::clamp(
+            ny * 6.0f,
+            -6.0f,
+            6.0f
+        );
 }
 
 
@@ -198,12 +431,15 @@ void FaceTracker::reset()
     faceFound = false;
 
     faceX = 0;
+
     faceY = 0;
 
     faceWidth = 0;
+
     faceHeight = 0;
 
     eyeX = 0.0f;
+
     eyeY = 0.0f;
 }
 
