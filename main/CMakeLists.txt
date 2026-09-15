@@ -7,6 +7,8 @@ idf_component_register(
         "SH1106.cpp"
         "FaceTracker.cpp"
         "VisionEngine.cpp"
+        "VisionTask.cpp"
+        "ServoEngine.cpp"
 
     INCLUDE_DIRS
         "."

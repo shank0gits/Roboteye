@@ -1,14 +1,21 @@
 #include "FaceTracker.h"
 
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 
 #include "dl_image_jpeg.hpp"
 
 #include <algorithm>
 
-#include "esp_heap_caps.h"
-
 static const char* TAG = "FaceTracker";
+
+
+//----------------------------------------------------
+// Eye Tracking Output Range
+//----------------------------------------------------
+
+static constexpr float EYE_TRACK_MAX_X = 20.0f;
+static constexpr float EYE_TRACK_MAX_Y = 12.0f;
 
 
 //----------------------------------------------------
@@ -30,7 +37,6 @@ FaceTracker::~FaceTracker()
     if (detector != nullptr)
     {
         delete detector;
-
         detector = nullptr;
     }
 }
@@ -49,13 +55,35 @@ bool FaceTracker::begin()
 
     reset();
 
+
+    //-----------------------------------------------
+    // Prevent Duplicate Detector
+    //-----------------------------------------------
+
+    if (detector != nullptr)
+    {
+        ESP_LOGI(
+            TAG,
+            "Face Detector already initialized"
+        );
+
+        return true;
+    }
+
+
     //-----------------------------------------------
     // Create Human Face Detector
     //-----------------------------------------------
 
-    detector = new HumanFaceDetect(
-        HumanFaceDetect::ESPDET_PICO_224_224_FACE
-    );
+    detector =
+        new HumanFaceDetect(
+            HumanFaceDetect::ESPDET_PICO_224_224_FACE
+        );
+
+
+    //-----------------------------------------------
+    // Check Detector
+    //-----------------------------------------------
 
     if (detector == nullptr)
     {
@@ -66,6 +94,11 @@ bool FaceTracker::begin()
 
         return false;
     }
+
+
+    //-----------------------------------------------
+    // Ready
+    //-----------------------------------------------
 
     ESP_LOGI(
         TAG,
@@ -85,14 +118,16 @@ bool FaceTracker::begin()
 // Update
 //----------------------------------------------------
 
-bool FaceTracker::update(camera_fb_t* frame)
+bool FaceTracker::update(
+    camera_fb_t* frame
+)
 {
     if (frame == nullptr)
     {
         reset();
-
         return false;
     }
+
 
     if (detector == nullptr)
     {
@@ -102,9 +137,9 @@ bool FaceTracker::update(camera_fb_t* frame)
         );
 
         reset();
-
         return false;
     }
+
 
     return processFrame(frame);
 }
@@ -118,15 +153,19 @@ bool FaceTracker::processFrame(
     camera_fb_t* frame
 )
 {
+    //-----------------------------------------------
+    // Validate Frame
+    //-----------------------------------------------
+
     if (frame == nullptr)
     {
         reset();
-
         return false;
     }
 
+
     //-----------------------------------------------
-    // We currently expect JPEG
+    // Validate JPEG
     //-----------------------------------------------
 
     if (frame->format != PIXFORMAT_JPEG)
@@ -142,148 +181,141 @@ bool FaceTracker::processFrame(
         return false;
     }
 
+
     //-----------------------------------------------
-    // Create ESP-DL JPEG Image
+    // Create JPEG Image
     //-----------------------------------------------
 
     dl::image::jpeg_img_t jpegImage;
 
-    jpegImage.data = frame->buf;
+    jpegImage.data =
+        frame->buf;
 
-    jpegImage.data_len = frame->len;
-
-//-----------------------------------------------
-// Decode JPEG
-//-----------------------------------------------
-
-ESP_LOGI(
-    TAG,
-    "Before JPEG decode: Free=%u, Largest=%u, PSRAM Free=%u, PSRAM Largest=%u",
-    heap_caps_get_free_size(MALLOC_CAP_8BIT),
-    heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
-    heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-    heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)
-);
-
-dl::image::img_t image =
-    dl::image::sw_decode_jpeg(
-        jpegImage,
-        dl::image::DL_IMAGE_PIX_TYPE_RGB888
-    );
+    jpegImage.data_len =
+        frame->len;
 
 
-//-----------------------------------------------
-// Check Decode Result
-//-----------------------------------------------
+    //-----------------------------------------------
+    // Decode JPEG
+    //-----------------------------------------------
 
-if (image.data == nullptr)
-{
-    ESP_LOGE(
-        TAG,
-        "JPEG decode failed: Free=%u, Largest=%u, PSRAM Free=%u, PSRAM Largest=%u",
-        heap_caps_get_free_size(MALLOC_CAP_8BIT),
-        heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
-        heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-        heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)
-    );
+    dl::image::img_t image =
+        dl::image::sw_decode_jpeg(
+            jpegImage,
+            dl::image::DL_IMAGE_PIX_TYPE_RGB888
+        );
 
-    reset();
 
-    return false;
-}
+    //-----------------------------------------------
+    // Decode Failed
+    //-----------------------------------------------
 
-ESP_LOGI(
-    TAG,
-    "JPEG decoded successfully: %dx%d",
-    image.width,
-    image.height
-);
+    if (image.data == nullptr)
+    {
+        ESP_LOGW(
+            TAG,
+            "JPEG decode failed"
+        );
+
+        reset();
+
+        return false;
+    }
+
+
+    //-----------------------------------------------
+    // Save Dimensions
+    //-----------------------------------------------
+
+    const int decodedWidth =
+        image.width;
+
+    const int decodedHeight =
+        image.height;
+
 
     //-----------------------------------------------
     // Run Face Detection
     //-----------------------------------------------
 
-   std::list<dl::detect::result_t>& results =
-    detector->run(image);
-
-   
+    std::list<dl::detect::result_t>& results =
+        detector->run(image);
 
 
-//-----------------------------------------------
-// No Face
-//-----------------------------------------------
+    //-----------------------------------------------
+    // No Face
+    //-----------------------------------------------
 
-if (results.empty())
-{
-    if (image.data != nullptr)
+    if (results.empty())
     {
-    heap_caps_free(image.data);
+        heap_caps_free(
+            image.data
+        );
+
         image.data = nullptr;
+
+        reset();
+
+        return false;
     }
 
-    reset();
 
-    return false;
-}
+    //-----------------------------------------------
+    // Get First Face
+    //-----------------------------------------------
 
-
-//-----------------------------------------------
-// Get First Face
-//-----------------------------------------------
-
-const auto& face = results.front();
+    const auto& face =
+        results.front();
 
 
-//-----------------------------------------------
-// Save Face Coordinates
-//-----------------------------------------------
+    //-----------------------------------------------
+    // Save Bounding Box
+    //-----------------------------------------------
 
-faceX =
-    static_cast<int>(
-        face.box[0]
+    faceX =
+        static_cast<int>(
+            face.box[0]
+        );
+
+    faceY =
+        static_cast<int>(
+            face.box[1]
+        );
+
+    faceWidth =
+        static_cast<int>(
+            face.box[2]
+            -
+            face.box[0]
+        );
+
+    faceHeight =
+        static_cast<int>(
+            face.box[3]
+            -
+            face.box[1]
+        );
+
+
+    //-----------------------------------------------
+    // Free Decoded Image
+    //-----------------------------------------------
+
+    heap_caps_free(
+        image.data
     );
 
-faceY =
-    static_cast<int>(
-        face.box[1]
-    );
-
-faceWidth =
-    static_cast<int>(
-        face.box[2] - face.box[0]
-    );
-
-faceHeight =
-    static_cast<int>(
-        face.box[3] - face.box[1]
-    );
-
- //-----------------------------------------------
- // Free Decoded JPEG Image
- //-----------------------------------------------
-
-if (image.data != nullptr)
-{
-    heap_caps_free(image.data);
     image.data = nullptr;
-}
-
-
-
-//-----------------------------------------------
-// Save Image Dimensions
-//-----------------------------------------------
-
-int decodedWidth = image.width;
-int decodedHeight = image.height;
 
 
     //-----------------------------------------------
-    // Validate Bounding Box
+    // Validate Face
     //-----------------------------------------------
 
-    if (faceWidth <= 0 ||
-        faceHeight <= 0)
+    if (
+        faceWidth <= 0 ||
+        faceHeight <= 0
+    )
     {
         reset();
 
@@ -299,27 +331,27 @@ int decodedHeight = image.height;
 
 
     //-----------------------------------------------
-    // Calculate Face Center
+    // Face Center
     //-----------------------------------------------
 
-    int centerX =
+    const int centerX =
         getFaceCenterX();
 
-    int centerY =
+    const int centerY =
         getFaceCenterY();
 
 
     //-----------------------------------------------
-    // Map Face Position
+    // Convert Face Position
     // To Eye Position
     //-----------------------------------------------
 
     mapFaceToEye(
-    centerX,
-    centerY,
-    decodedWidth,
-    decodedHeight
-);
+        centerX,
+        centerY,
+        decodedWidth,
+        decodedHeight
+    );
 
 
     //-----------------------------------------------
@@ -348,7 +380,7 @@ int decodedHeight = image.height;
 
 
 //----------------------------------------------------
-// Convert Face Position To Eye Position
+// Map Face Position To Eye Position
 //----------------------------------------------------
 
 void FaceTracker::mapFaceToEye(
@@ -358,11 +390,16 @@ void FaceTracker::mapFaceToEye(
     int frameHeight
 )
 {
-    if (frameWidth <= 0 ||
-        frameHeight <= 0)
+    //-----------------------------------------------
+    // Validate Dimensions
+    //-----------------------------------------------
+
+    if (
+        frameWidth <= 0 ||
+        frameHeight <= 0
+    )
     {
         eyeX = 0.0f;
-
         eyeY = 0.0f;
 
         return;
@@ -370,54 +407,85 @@ void FaceTracker::mapFaceToEye(
 
 
     //-----------------------------------------------
-    // Normalize X
+    // Clamp Face Center
     //-----------------------------------------------
 
-    float nx =
-        (
-            static_cast<float>(faceCenterX)
-            /
-            static_cast<float>(frameWidth)
+    faceCenterX =
+        std::clamp(
+            faceCenterX,
+            0,
+            frameWidth - 1
+        );
+
+    faceCenterY =
+        std::clamp(
+            faceCenterY,
+            0,
+            frameHeight - 1
+        );
+
+
+    //-----------------------------------------------
+    // Normalize X
+    // 0.0 -> 1.0
+    //-----------------------------------------------
+
+    const float normalizedX =
+        static_cast<float>(
+            faceCenterX
         )
-        *
-        2.0f
-        -
-        1.0f;
+        /
+        static_cast<float>(
+            frameWidth - 1
+        );
 
 
     //-----------------------------------------------
     // Normalize Y
+    // 0.0 -> 1.0
     //-----------------------------------------------
 
-    float ny =
-        (
-            static_cast<float>(faceCenterY)
-            /
-            static_cast<float>(frameHeight)
+    const float normalizedY =
+        static_cast<float>(
+            faceCenterY
         )
-        *
-        2.0f
+        /
+        static_cast<float>(
+            frameHeight - 1
+        );
+
+
+    //-----------------------------------------------
+    // Convert To -1.0 -> +1.0
+    //-----------------------------------------------
+
+    const float nx =
+        (normalizedX * 2.0f)
+        -
+        1.0f;
+
+    const float ny =
+        (normalizedY * 2.0f)
         -
         1.0f;
 
 
     //-----------------------------------------------
-    // Convert To EyeEngine Coordinates
+    // Map To Eye Movement
     //-----------------------------------------------
 
     eyeX =
         std::clamp(
-            nx * 10.0f,
-            -10.0f,
-            10.0f
+            nx * EYE_TRACK_MAX_X,
+            -EYE_TRACK_MAX_X,
+            EYE_TRACK_MAX_X
         );
-
 
     eyeY =
         std::clamp(
-            ny * 6.0f,
-            -6.0f,
-            6.0f
+            ny * EYE_TRACK_MAX_Y,
+            -EYE_TRACK_MAX_Y,
+            EYE_TRACK_MAX_Y
         );
 }
 
@@ -431,15 +499,12 @@ void FaceTracker::reset()
     faceFound = false;
 
     faceX = 0;
-
     faceY = 0;
 
     faceWidth = 0;
-
     faceHeight = 0;
 
     eyeX = 0.0f;
-
     eyeY = 0.0f;
 }
 
@@ -500,7 +565,8 @@ int FaceTracker::getFaceHeight() const
 
 int FaceTracker::getFaceCenterX() const
 {
-    return faceX + (faceWidth / 2);
+    return faceX +
+           (faceWidth / 2);
 }
 
 
@@ -510,7 +576,8 @@ int FaceTracker::getFaceCenterX() const
 
 int FaceTracker::getFaceCenterY() const
 {
-    return faceY + (faceHeight / 2);
+    return faceY +
+           (faceHeight / 2);
 }
 
 

@@ -14,11 +14,13 @@
 #include "CameraEngine.h"
 #include "FaceTracker.h"
 #include "VisionEngine.h"
+#include "VisionTask.h"
+#include "ServoEngine.h"
 
 
-//--------------------------------------------------
+//==================================================
 // GPIO
-//--------------------------------------------------
+//==================================================
 
 #define SDA_PIN     ((gpio_num_t)46)
 #define SCL_PIN     ((gpio_num_t)14)
@@ -26,59 +28,170 @@
 #define I2C_PORT    I2C_NUM_0
 
 
-static const char *TAG = "RobotEye";
+//--------------------------------------------------
+// Servo GPIO
+//--------------------------------------------------
+
+#define PAN_SERVO_PIN     ((gpio_num_t)20)
+#define TILT_SERVO_PIN    ((gpio_num_t)21)
 
 
 //--------------------------------------------------
+// Brain Wake GPIO
+// RobotEye GPIO19 -> Brain GPIO1
+//--------------------------------------------------
+
+#define WAKE_GPIO         ((gpio_num_t)19)
+
+
+static const char* TAG =
+    "RobotEye";
+
+
+//==================================================
 // I2C
-//--------------------------------------------------
+//==================================================
 
-i2c_master_bus_handle_t busHandle = nullptr;
+i2c_master_bus_handle_t busHandle =
+    nullptr;
 
 
-//--------------------------------------------------
+//==================================================
 // Display
-//--------------------------------------------------
+//==================================================
 
 SH1106 display;
 
 
-//--------------------------------------------------
+//==================================================
 // Engines
-//--------------------------------------------------
+//==================================================
 
-EyeEngine eye(display);
+EyeEngine eye(
+    display
+);
+
 
 CameraEngine camera;
 
+
 FaceTracker tracker;
 
-VisionEngine vision(camera, tracker);
+
+VisionEngine vision(
+    camera,
+    tracker,
+    eye
+);
 
 
-//--------------------------------------------------
-// Main
-//--------------------------------------------------
+VisionTask visionTask(
+    vision
+);
 
-extern "C" void app_main(void)
+
+//==================================================
+// Servo Engine
+//==================================================
+
+ServoEngine servos(
+    PAN_SERVO_PIN,
+    TILT_SERVO_PIN
+);
+
+
+//==================================================
+// Application Main
+//==================================================
+
+extern "C"
+void app_main(
+    void
+)
 {
     //--------------------------------------------------
-    // Configure I2C Bus
+    // Start I2C
     //--------------------------------------------------
 
-    ESP_LOGI(TAG, "Starting I2C Bus...");
+    ESP_LOGI(
+        TAG,
+        "Starting I2C Bus..."
+    );
+
+
+    //--------------------------------------------------
+    // Brain ESP Wake GPIO
+    // GPIO19 -> Brain GPIO1
+    //--------------------------------------------------
+
+    ESP_LOGI(
+        TAG,
+        "Initializing Wake GPIO..."
+    );
+
+
+    gpio_config_t wake_config = {};
+
+    wake_config.pin_bit_mask =
+        (1ULL << WAKE_GPIO);
+
+    wake_config.mode =
+        GPIO_MODE_OUTPUT;
+
+    wake_config.pull_up_en =
+        GPIO_PULLUP_DISABLE;
+
+    wake_config.pull_down_en =
+        GPIO_PULLDOWN_DISABLE;
+
+    wake_config.intr_type =
+        GPIO_INTR_DISABLE;
+
+
+    ESP_ERROR_CHECK(
+        gpio_config(
+            &wake_config
+        )
+    );
+
+
+    // Keep wake signal LOW during boot
+    gpio_set_level(
+        WAKE_GPIO,
+        0
+    );
+
+
+    ESP_LOGI(
+        TAG,
+        "Wake GPIO Ready - GPIO19"
+    );
+
+
+    //--------------------------------------------------
+    // I2C Configuration
+    //--------------------------------------------------
 
     i2c_master_bus_config_t bus_config = {};
 
-    bus_config.i2c_port = I2C_PORT;
-    bus_config.sda_io_num = SDA_PIN;
-    bus_config.scl_io_num = SCL_PIN;
 
-    bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
+    bus_config.i2c_port =
+        I2C_PORT;
 
-    bus_config.glitch_ignore_cnt = 7;
+    bus_config.sda_io_num =
+        SDA_PIN;
 
-    bus_config.flags.enable_internal_pullup = true;
+    bus_config.scl_io_num =
+        SCL_PIN;
+
+    bus_config.clk_source =
+        I2C_CLK_SRC_DEFAULT;
+
+    bus_config.glitch_ignore_cnt =
+        7;
+
+    bus_config.flags.enable_internal_pullup =
+        true;
 
 
     ESP_ERROR_CHECK(
@@ -88,29 +201,45 @@ extern "C" void app_main(void)
         )
     );
 
-    ESP_LOGI(TAG, "I2C Bus Ready");
+
+    ESP_LOGI(
+        TAG,
+        "I2C Bus Ready"
+    );
 
 
     //--------------------------------------------------
-    // Initialize OLED
+    // Start OLED
     //--------------------------------------------------
 
-    ESP_LOGI(TAG, "Starting SH1106 OLED...");
+    ESP_LOGI(
+        TAG,
+        "Starting SH1106 OLED..."
+    );
 
-    if (!display.begin(busHandle))
+
+    if (
+        !display.begin(
+            busHandle
+        )
+    )
     {
         ESP_LOGE(
             TAG,
             "OLED initialization failed!"
         );
 
+
         while (true)
         {
             vTaskDelay(
-                pdMS_TO_TICKS(1000)
+                pdMS_TO_TICKS(
+                    1000
+                )
             );
         }
     }
+
 
     ESP_LOGI(
         TAG,
@@ -119,7 +248,7 @@ extern "C" void app_main(void)
 
 
     //--------------------------------------------------
-    // Initialize Eye Engine
+    // Start Eye Engine
     //--------------------------------------------------
 
     ESP_LOGI(
@@ -127,10 +256,9 @@ extern "C" void app_main(void)
         "Starting Eye Engine..."
     );
 
+
     eye.begin();
 
-    // Enable face tracking control
-    eye.enableTracking(true);
 
     ESP_LOGI(
         TAG,
@@ -139,7 +267,44 @@ extern "C" void app_main(void)
 
 
     //--------------------------------------------------
-    // Initialize Camera
+    // Start Servo Engine
+    //--------------------------------------------------
+
+    ESP_LOGI(
+        TAG,
+        "Starting Servo Engine..."
+    );
+
+
+    if (
+        !servos.begin()
+    )
+    {
+        ESP_LOGE(
+            TAG,
+            "Servo Engine initialization failed!"
+        );
+
+
+        while (true)
+        {
+            vTaskDelay(
+                pdMS_TO_TICKS(
+                    1000
+                )
+            );
+        }
+    }
+
+
+    ESP_LOGI(
+        TAG,
+        "Servo Engine Started"
+    );
+
+
+    //--------------------------------------------------
+    // Start Camera
     //--------------------------------------------------
 
     ESP_LOGI(
@@ -147,20 +312,27 @@ extern "C" void app_main(void)
         "Starting Camera..."
     );
 
-    if (!camera.begin())
+
+    if (
+        !camera.begin()
+    )
     {
         ESP_LOGE(
             TAG,
             "Camera initialization failed!"
         );
 
+
         while (true)
         {
             vTaskDelay(
-                pdMS_TO_TICKS(1000)
+                pdMS_TO_TICKS(
+                    1000
+                )
             );
         }
     }
+
 
     ESP_LOGI(
         TAG,
@@ -169,7 +341,7 @@ extern "C" void app_main(void)
 
 
     //--------------------------------------------------
-    // Initialize Vision Engine
+    // Start Vision Engine
     //--------------------------------------------------
 
     ESP_LOGI(
@@ -177,24 +349,68 @@ extern "C" void app_main(void)
         "Starting Vision Engine..."
     );
 
-    if (!vision.begin())
+
+    if (
+        !vision.begin()
+    )
     {
         ESP_LOGE(
             TAG,
             "Vision Engine initialization failed!"
         );
 
+
         while (true)
         {
             vTaskDelay(
-                pdMS_TO_TICKS(1000)
+                pdMS_TO_TICKS(
+                    1000
+                )
             );
         }
     }
 
+
     ESP_LOGI(
         TAG,
         "Vision Engine Started"
+    );
+
+
+    //--------------------------------------------------
+    // Start Vision Task
+    //--------------------------------------------------
+
+    ESP_LOGI(
+        TAG,
+        "Starting Vision Task..."
+    );
+
+
+    if (
+        !visionTask.begin()
+    )
+    {
+        ESP_LOGE(
+            TAG,
+            "Vision Task initialization failed!"
+        );
+
+
+        while (true)
+        {
+            vTaskDelay(
+                pdMS_TO_TICKS(
+                    1000
+                )
+            );
+        }
+    }
+
+
+    ESP_LOGI(
+        TAG,
+        "Vision Task Started"
     );
 
 
@@ -219,8 +435,34 @@ extern "C" void app_main(void)
 
     ESP_LOGI(
         TAG,
+        "Pan Servo GPIO  : %d",
+        PAN_SERVO_PIN
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Tilt Servo GPIO : %d",
+        TILT_SERVO_PIN
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Wake GPIO       : %d",
+        WAKE_GPIO
+    );
+
+    ESP_LOGI(
+        TAG,
         "================================"
     );
+
+
+    //--------------------------------------------------
+    // Face State
+    //--------------------------------------------------
+
+    static bool previousFaceState =
+        false;
 
 
     //--------------------------------------------------
@@ -229,71 +471,162 @@ extern "C" void app_main(void)
 
     while (true)
     {
-        //--------------------------------------------------
-        // Capture Camera Frame
-        // Process Face Detection
-        //--------------------------------------------------
+        //------------------------------------------------
+        // Read current face state
+        //------------------------------------------------
 
-        vision.update();
+        const bool currentFaceState =
+            tracker.faceDetected();
 
 
-        //--------------------------------------------------
-        // Face Tracking
-        //--------------------------------------------------
+        //------------------------------------------------
+        // Face State Changed
+        //------------------------------------------------
 
-        if (tracker.faceDetected())
+        if (
+            currentFaceState !=
+            previousFaceState
+        )
         {
-            //--------------------------------------------------
-            // Face Found
-            //--------------------------------------------------
+            //------------------------------------------------
+            // Face Detected
+            //------------------------------------------------
 
-            float eyeTargetX =
+            if (currentFaceState)
+            {
+                // Send HIGH to Brain GPIO1
+                gpio_set_level(
+                    WAKE_GPIO,
+                    1
+                );
+
+
+                ESP_LOGI(
+                    TAG,
+                    "FACE DETECTED -> GPIO19 HIGH -> BRAIN WAKE"
+                );
+            }
+
+
+            //------------------------------------------------
+            // Face Lost
+            //------------------------------------------------
+
+            else
+            {
+                // Return wake signal LOW
+                gpio_set_level(
+                    WAKE_GPIO,
+                    0
+                );
+
+
+                ESP_LOGI(
+                    TAG,
+                    "FACE LOST -> GPIO19 LOW"
+                );
+            }
+
+
+            //------------------------------------------------
+            // Save current state
+            //------------------------------------------------
+
+            previousFaceState =
+                currentFaceState;
+        }
+
+
+        //------------------------------------------------
+        // Face Found
+        //------------------------------------------------
+
+        if (
+            tracker.faceDetected()
+        )
+        {
+            //--------------------------------------------
+            // Get Face Tracking Target
+            //--------------------------------------------
+
+            const float faceX =
                 tracker.getEyeX();
 
-            float eyeTargetY =
+            const float faceY =
                 tracker.getEyeY();
 
 
-            //--------------------------------------------------
-            // Move Eye Toward Face
-            //--------------------------------------------------
+            //--------------------------------------------
+            // Move OLED Eye
+            //--------------------------------------------
 
             eye.setTarget(
-                eyeTargetX,
-                eyeTargetY
+                faceX,
+                faceY
+            );
+
+
+            //--------------------------------------------
+            // Move Pan + Tilt Servos
+            //--------------------------------------------
+
+            servos.setTarget(
+                faceX,
+                faceY
             );
         }
+
+
+        //------------------------------------------------
+        // Face Lost
+        //------------------------------------------------
+
         else
         {
-            //--------------------------------------------------
-            // No Face
-            // Return Eye to Center
-            //--------------------------------------------------
+            //--------------------------------------------
+            // Center OLED Eye
+            //--------------------------------------------
 
             eye.center();
+
+
+            //--------------------------------------------
+            // Center Servos Smoothly
+            //--------------------------------------------
+
+            servos.center();
         }
 
 
-        //--------------------------------------------------
-        // Update Eye Animation
-        //--------------------------------------------------
+        //------------------------------------------------
+        // Update OLED Eye
+        //------------------------------------------------
 
         eye.update();
 
 
-        //--------------------------------------------------
-        // Draw Eye on 0.96 inch SH1106 OLED
-        //--------------------------------------------------
+        //------------------------------------------------
+        // Draw OLED Eye
+        //------------------------------------------------
 
         eye.draw();
 
 
-        //--------------------------------------------------
-        // Loop Delay
-        //--------------------------------------------------
+        //------------------------------------------------
+        // Update Servos
+        //------------------------------------------------
+
+        servos.update();
+
+
+        //------------------------------------------------
+        // 50 FPS Main Loop
+        //------------------------------------------------
 
         vTaskDelay(
-            pdMS_TO_TICKS(20)
+            pdMS_TO_TICKS(
+                20
+            )
         );
     }
 }

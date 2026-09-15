@@ -103,6 +103,7 @@ void CameraEngine::setupConfig()
     config.ledc_channel = LEDC_CHANNEL_0;
     config.ledc_timer   = LEDC_TIMER_0;
 
+
     //-----------------------------------------------
     // Camera Data Pins
     //-----------------------------------------------
@@ -116,6 +117,7 @@ void CameraEngine::setupConfig()
     config.pin_d6 = Y8_GPIO_NUM;
     config.pin_d7 = Y9_GPIO_NUM;
 
+
     //-----------------------------------------------
     // Sync Pins
     //-----------------------------------------------
@@ -125,12 +127,14 @@ void CameraEngine::setupConfig()
     config.pin_vsync = VSYNC_GPIO_NUM;
     config.pin_href  = HREF_GPIO_NUM;
 
+
     //-----------------------------------------------
     // SCCB Pins
     //-----------------------------------------------
 
     config.pin_sccb_sda = SIOD_GPIO_NUM;
     config.pin_sccb_scl = SIOC_GPIO_NUM;
+
 
     //-----------------------------------------------
     // Control Pins
@@ -139,11 +143,13 @@ void CameraEngine::setupConfig()
     config.pin_pwdn  = PWDN_GPIO_NUM;
     config.pin_reset = RESET_GPIO_NUM;
 
+
     //-----------------------------------------------
     // Camera Clock
     //-----------------------------------------------
 
     config.xclk_freq_hz = 20000000;
+
 
     //-----------------------------------------------
     // Pixel Format
@@ -153,8 +159,9 @@ void CameraEngine::setupConfig()
 
     config.pixel_format = pixelFormat;
 
+
     //-----------------------------------------------
-    // Frame Configuration
+    // Frame Size
     //-----------------------------------------------
 
     config.frame_size = FRAMESIZE_QQVGA;
@@ -162,29 +169,54 @@ void CameraEngine::setupConfig()
     width  = 160;
     height = 120;
 
+
     //-----------------------------------------------
     // JPEG Quality
     //-----------------------------------------------
+    //
+    // Lower number = higher JPEG quality
+    // Higher number = more compression
+    //
+    // 15 is a good balance for face detection.
+    //
 
     config.jpeg_quality = 15;
+
 
     //-----------------------------------------------
     // Frame Buffers
     //-----------------------------------------------
+    //
+    // Two buffers allow the camera to continue
+    // capturing while the vision system processes
+    // the previous frame.
+    //
 
-    config.fb_count = 1;
+    config.fb_count = 2;
+
 
     //-----------------------------------------------
-    // Use PSRAM for Frame Buffer
+    // Frame Buffer Location
     //-----------------------------------------------
+    //
+    // ESP32-S3 has 8MB PSRAM.
+    // Keep camera frame buffers in PSRAM.
+    //
 
     config.fb_location = CAMERA_FB_IN_PSRAM;
 
-    //-----------------------------------------------
-    // Capture Mode
-    //-----------------------------------------------
 
-    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+    //-----------------------------------------------
+    // Frame Grab Mode
+    //-----------------------------------------------
+    //
+    // Always keep the newest frame available.
+    //
+    // This is important for real-time face tracking.
+    //
+
+    config.grab_mode = CAMERA_GRAB_LATEST;
+
 
     //-----------------------------------------------
     // Debug
@@ -196,6 +228,7 @@ void CameraEngine::setupConfig()
     ESP_LOGI(TAG, "Frame Buffers : %d", config.fb_count);
     ESP_LOGI(TAG, "JPEG Quality  : %d", config.jpeg_quality);
     ESP_LOGI(TAG, "Frame Buffer  : PSRAM");
+    ESP_LOGI(TAG, "Grab Mode     : LATEST");
 }
 
 
@@ -207,142 +240,146 @@ bool CameraEngine::initCamera()
 {
     ESP_LOGI(TAG, "Initializing Camera...");
 
- //-----------------------------------------------
-// Initialize ESP Camera Driver
-//-----------------------------------------------
 
-esp_err_t err = esp_camera_init(&config);
+    //-----------------------------------------------
+    // Initialize ESP Camera Driver
+    //-----------------------------------------------
 
-if (err != ESP_OK)
-{
-    ESP_LOGE(
+    esp_err_t err = esp_camera_init(&config);
+
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(
+            TAG,
+            "Camera Initialization Failed! Error: 0x%x",
+            err
+        );
+
+        initialized = false;
+
+        return false;
+    }
+
+
+    ESP_LOGI(
         TAG,
-        "Camera Initialization Failed! Error: 0x%x",
-        err
+        "Camera Initialized Successfully"
     );
 
-    initialized = false;
 
-    return false;
-}
+    //-----------------------------------------------
+    // Get Camera Sensor
+    //-----------------------------------------------
 
-ESP_LOGI(
-    TAG,
-    "Camera Initialized Successfully"
-);
+    sensor = esp_camera_sensor_get();
+
+    if (sensor == nullptr)
+    {
+        ESP_LOGE(
+            TAG,
+            "Unable to detect camera sensor"
+        );
+
+        initialized = false;
+
+        return false;
+    }
 
 
-//-----------------------------------------------
-// Get Camera Sensor
-//-----------------------------------------------
+    //-----------------------------------------------
+    // Detect Sensor
+    //-----------------------------------------------
 
-sensor = esp_camera_sensor_get();
-
-if (sensor == nullptr)
-{
-    ESP_LOGE(
+    ESP_LOGI(
         TAG,
-        "Unable to detect camera sensor"
+        "Camera Sensor PID: 0x%04X",
+        sensor->id.PID
     );
 
-    initialized = false;
 
-    return false;
-}
+    switch (sensor->id.PID)
+    {
+        case OV2640_PID:
 
+            ESP_LOGI(
+                TAG,
+                "Sensor : OV2640"
+            );
 
-//-----------------------------------------------
-// Detect Sensor
-//-----------------------------------------------
-
-ESP_LOGI(
-    TAG,
-    "Camera Sensor PID: 0x%04X",
-    sensor->id.PID
-);
-
-switch (sensor->id.PID)
-{
-    case OV2640_PID:
-
-        ESP_LOGI(
-            TAG,
-            "Sensor : OV2640"
-        );
-
-        break;
+            break;
 
 
-    case OV3660_PID:
+        case OV3660_PID:
 
-        ESP_LOGI(
-            TAG,
-            "Sensor : OV3660"
-        );
+            ESP_LOGI(
+                TAG,
+                "Sensor : OV3660"
+            );
 
-        break;
-
-
-    case OV5640_PID:
-
-        ESP_LOGI(
-            TAG,
-            "Sensor : OV5640"
-        );
-
-        break;
+            break;
 
 
-    default:
+        case OV5640_PID:
 
-        ESP_LOGW(
-            TAG,
-            "Unknown Sensor PID : 0x%04X",
-            sensor->id.PID
-        );
+            ESP_LOGI(
+                TAG,
+                "Sensor : OV5640"
+            );
 
-        break;
-}
+            break;
 
 
-//-----------------------------------------------
-// Sensor Settings
-//-----------------------------------------------
+        default:
 
-sensor->set_pixformat(
-    sensor,
-    PIXFORMAT_JPEG
-);
+            ESP_LOGW(
+                TAG,
+                "Unknown Sensor PID : 0x%04X",
+                sensor->id.PID
+            );
 
-sensor->set_framesize(
-    sensor,
-    FRAMESIZE_QQVGA
-);
+            break;
+    }
 
-sensor->set_vflip(
-    sensor,
-    1
-);
 
-sensor->set_brightness(
-    sensor,
-    1
-);
+    //-----------------------------------------------
+    // Sensor Settings
+    //-----------------------------------------------
 
-sensor->set_contrast(
-    sensor,
-    1
-);
+    sensor->set_pixformat(
+        sensor,
+        PIXFORMAT_JPEG
+    );
 
-sensor->set_saturation(
-    sensor,
-    -2
-);
+    sensor->set_framesize(
+        sensor,
+        FRAMESIZE_QQVGA
+    );
 
-sensor->set_whitebal(
-    sensor,
-    1
-);
+    sensor->set_vflip(
+        sensor,
+        1
+    );
+
+    sensor->set_brightness(
+        sensor,
+        1
+    );
+
+    sensor->set_contrast(
+        sensor,
+        1
+    );
+
+    sensor->set_saturation(
+        sensor,
+        -2
+    );
+
+    sensor->set_whitebal(
+        sensor,
+        1
+    );
+
 
     //-----------------------------------------------
     // Final Status
@@ -377,17 +414,12 @@ camera_fb_t* CameraEngine::captureFrame()
 {
     if (!initialized)
     {
-        ESP_LOGE(
-            TAG,
-            "Camera not initialized."
-        );
-
         return nullptr;
     }
 
 
     //-----------------------------------------------
-    // Capture Frame
+    // Capture Latest Frame
     //-----------------------------------------------
 
     camera_fb_t* frame =
@@ -400,9 +432,9 @@ camera_fb_t* CameraEngine::captureFrame()
 
     if (frame == nullptr)
     {
-        ESP_LOGE(
+        ESP_LOGW(
             TAG,
-            "Failed to capture frame."
+            "Camera frame capture failed"
         );
 
         return nullptr;
@@ -410,35 +442,10 @@ camera_fb_t* CameraEngine::captureFrame()
 
 
     //-----------------------------------------------
-    // Debug Information
+    // Frame Counter
     //-----------------------------------------------
 
-    ESP_LOGI(
-        TAG,
-        "Captured: format=%d, size=%dx%d, len=%u",
-        frame->format,
-        frame->width,
-        frame->height,
-        frame->len
-    );
-
-
-    //-----------------------------------------------
-    // Check JPEG Header
-    //-----------------------------------------------
-
-    if (
-        frame->format == PIXFORMAT_JPEG &&
-        frame->len >= 2
-    )
-    {
-        ESP_LOGI(
-            TAG,
-            "JPEG Header: %02X %02X",
-            frame->buf[0],
-            frame->buf[1]
-        );
-    }
+    frameCounter++;
 
 
     return frame;
@@ -527,34 +534,8 @@ void CameraEngine::update()
 
 
     //-----------------------------------------------
-    // Frame Counter
-    //-----------------------------------------------
-
-    frameCounter++;
-
-
-    //-----------------------------------------------
-    // Periodic Debug
-    //-----------------------------------------------
-
-    if ((frameCounter % 30) == 0)
-    {
-        ESP_LOGI(
-            TAG,
-            "Frame %lu : %dx%d Size=%u bytes",
-            (unsigned long)frameCounter,
-            frame->width,
-            frame->height,
-            frame->len
-        );
-    }
-
-
-    //-----------------------------------------------
     // Release Frame
     //-----------------------------------------------
 
     releaseFrame(frame);
-
-    frame = nullptr;
 }
