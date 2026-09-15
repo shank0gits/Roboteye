@@ -11,10 +11,12 @@ static const char* TAG = "VisionEngine";
 
 VisionEngine::VisionEngine(
     CameraEngine& cameraRef,
-    FaceTracker& trackerRef
+    FaceTracker& trackerRef,
+    EyeEngine& eyeRef
 )
     : camera(cameraRef),
-      tracker(trackerRef)
+      tracker(trackerRef),
+      eye(eyeRef)
 {
 }
 
@@ -25,11 +27,15 @@ VisionEngine::VisionEngine(
 
 bool VisionEngine::begin()
 {
-    ESP_LOGI(TAG, "Starting Vision Engine...");
+    ESP_LOGI(
+        TAG,
+        "Starting Vision Engine..."
+    );
 
-    //------------------------------------
+
+    //-----------------------------------------------
     // Check Camera
-    //------------------------------------
+    //-----------------------------------------------
 
     if (!camera.isReady())
     {
@@ -43,9 +49,10 @@ bool VisionEngine::begin()
         return false;
     }
 
-    //------------------------------------
+
+    //-----------------------------------------------
     // Initialize Face Tracker
-    //------------------------------------
+    //-----------------------------------------------
 
     if (!tracker.begin())
     {
@@ -59,9 +66,10 @@ bool VisionEngine::begin()
         return false;
     }
 
-    //------------------------------------
+
+    //-----------------------------------------------
     // Reset Statistics
-    //------------------------------------
+    //-----------------------------------------------
 
     frameCounter = 0;
 
@@ -69,9 +77,17 @@ bool VisionEngine::begin()
 
     lostFrames = 0;
 
-    //------------------------------------
+
+    //-----------------------------------------------
+    // Disable Eye Tracking Initially
+    //-----------------------------------------------
+
+    eye.enableTracking(false);
+
+
+    //-----------------------------------------------
     // Ready
-    //------------------------------------
+    //-----------------------------------------------
 
     initialized = true;
 
@@ -90,58 +106,133 @@ bool VisionEngine::begin()
 
 void VisionEngine::update()
 {
+    //-----------------------------------------------
+    // Check Initialization
+    //-----------------------------------------------
+
     if (!initialized)
     {
         return;
     }
 
-    //------------------------------------
+
+    //-----------------------------------------------
     // Capture Camera Frame
-    //------------------------------------
+    //-----------------------------------------------
 
     camera_fb_t* frame =
         camera.captureFrame();
+
+
+    //-----------------------------------------------
+    // Check Frame
+    //-----------------------------------------------
 
     if (frame == nullptr)
     {
         lostFrames++;
 
+        //-------------------------------------------
+        // No Frame = No Tracking
+        //-------------------------------------------
+
+        eye.enableTracking(false);
+
         return;
     }
 
-    //------------------------------------
-    // Count Frame
-    //------------------------------------
+
+    //-----------------------------------------------
+    // Count Captured Frame
+    //-----------------------------------------------
 
     frameCounter++;
 
-    //------------------------------------
-    // Face Detection
-    //------------------------------------
 
-    bool detected =
+    //-----------------------------------------------
+    // Run Face Detection
+    //-----------------------------------------------
+
+    const bool detected =
         tracker.update(frame);
 
-    if (detected)
-    {
-        processedFrames++;
-    }
-    else
-    {
-        lostFrames++;
-    }
 
-    //------------------------------------
-    // Release Camera Frame
-    //------------------------------------
+    //-----------------------------------------------
+    // IMPORTANT:
+    // Release Camera Frame Immediately
+    //-----------------------------------------------
+    //
+    // FaceTracker has already decoded and processed
+    // the frame by this point.
+    //
+    // Releasing immediately prevents the camera
+    // frame buffer from remaining occupied.
+    //
 
     camera.releaseFrame(frame);
 
-    //------------------------------------
-    // Debug Statistics
-    //------------------------------------
+    frame = nullptr;
 
-    if ((frameCounter % 60) == 0)
+
+    //-----------------------------------------------
+    // Face Detected
+    //-----------------------------------------------
+
+    if (detected)
+    {
+        //-------------------------------------------
+        // Count Successful Detection
+        //-------------------------------------------
+
+        processedFrames++;
+
+
+        //-------------------------------------------
+        // Enable Eye Tracking
+        //-------------------------------------------
+
+        eye.enableTracking(true);
+
+
+        //-------------------------------------------
+        // Update Eye Target
+        //-------------------------------------------
+
+        eye.setTarget(
+            tracker.getEyeX(),
+            tracker.getEyeY()
+        );
+    }
+
+
+    //-----------------------------------------------
+    // Face Not Detected
+    //-----------------------------------------------
+
+    else
+    {
+        //-------------------------------------------
+        // Count Lost Frame
+        //-------------------------------------------
+
+        lostFrames++;
+
+
+        //-------------------------------------------
+        // Disable Eye Tracking
+        //-------------------------------------------
+
+        eye.enableTracking(false);
+    }
+
+
+    //-----------------------------------------------
+    // Periodic Statistics
+    //-----------------------------------------------
+
+    if (
+        (frameCounter % 60) == 0
+    )
     {
         ESP_LOGI(
             TAG,
@@ -150,13 +241,16 @@ void VisionEngine::update()
             "Lost: %lu | "
             "Face: %s",
 
-            (unsigned long)frameCounter,
+            (unsigned long)
+            frameCounter,
 
-            (unsigned long)processedFrames,
+            (unsigned long)
+            processedFrames,
 
-            (unsigned long)lostFrames,
+            (unsigned long)
+            lostFrames,
 
-            tracker.faceDetected()
+            detected
                 ? "YES"
                 : "NO"
         );

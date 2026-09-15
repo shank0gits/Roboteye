@@ -6,15 +6,25 @@
 #include "SH1106.h"
 #include "Graphics.h"
 
+
 class EyeEngine
 {
 public:
 
     //------------------------------------
+    // Eye Movement Range
+    //------------------------------------
+
+    static constexpr float MAX_X = 20.0f;
+    static constexpr float MAX_Y = 12.0f;
+
+
+    //------------------------------------
     // Constructor
     //------------------------------------
 
-    EyeEngine(SH1106 &display);
+    explicit EyeEngine(SH1106 &display);
+
 
     //------------------------------------
     // Engine
@@ -26,6 +36,7 @@ public:
 
     void draw();
 
+
     //------------------------------------
     // Eye Control
     //------------------------------------
@@ -36,6 +47,7 @@ public:
 
     void center();
 
+
     //------------------------------------
     // Tracking
     //------------------------------------
@@ -44,17 +56,20 @@ public:
 
     bool trackingEnabled() const;
 
+
     //------------------------------------
     // Blink
     //------------------------------------
 
     void blink();
 
+
     //------------------------------------
     // Idle
     //------------------------------------
 
     void enableIdle(bool state);
+
 
     //------------------------------------
     // Current Position
@@ -64,6 +79,7 @@ public:
 
     float getY() const;
 
+
     //------------------------------------
     // Target Position
     //------------------------------------
@@ -72,29 +88,40 @@ public:
 
     float getTargetY() const;
 
+
 private:
 
+    //------------------------------------
+    // Graphics Engine
+    //------------------------------------
+
     Graphics graphics;
+
 
     //------------------------------------
     // Current Eye Position
     //------------------------------------
 
     float pupilX = 0.0f;
+
     float pupilY = 0.0f;
+
 
     //------------------------------------
     // Target Position
     //------------------------------------
 
     float targetX = 0.0f;
+
     float targetY = 0.0f;
+
 
     //------------------------------------
     // Tracking
     //------------------------------------
 
     bool tracking = false;
+
 
     //------------------------------------
     // Blink
@@ -103,6 +130,7 @@ private:
     int blinkHeight = 0;
 
     bool blinking = false;
+
 
     //------------------------------------
     // Idle
@@ -114,13 +142,15 @@ private:
 
     unsigned long lastMove = 0;
 
+
     //------------------------------------
-    // Internal
+    // Internal Functions
     //------------------------------------
 
     void smoothMovement();
 
     void randomMovement();
+
 };
 
 #endif

@@ -1,10 +1,23 @@
 #include "Graphics.h"
+
 #include <math.h>
 
-Graphics::Graphics(SH1106 &display)
+
+//====================================================
+// Constructor
+//====================================================
+
+Graphics::Graphics(
+    SH1106 &display
+)
+    : oled(&display)
 {
-    oled = &display;
 }
+
+
+//====================================================
+// Display Initialization
+//====================================================
 
 void Graphics::begin()
 {
@@ -12,73 +25,177 @@ void Graphics::begin()
     show();
 }
 
+
+//====================================================
+// Clear Display
+//====================================================
+
 void Graphics::clear()
 {
     oled->clear();
 }
+
+
+//====================================================
+// Update Display
+//====================================================
 
 void Graphics::show()
 {
     oled->display();
 }
 
+
 //====================================================
-// Main Draw
+// Main Eye Drawing
 //====================================================
 
-void Graphics::drawEye(float pupilX, float pupilY, int blinkHeight)
+void Graphics::drawEye(
+    float pupilX,
+    float pupilY,
+    int blinkHeight
+)
 {
+    //-----------------------------------------------
+    // BLACK BACKGROUND
+    //-----------------------------------------------
+
     clear();
+
+
+    //-----------------------------------------------
+    // Outer Eye Housing
+    //-----------------------------------------------
 
     drawEyeball();
 
-    //------------------------------------
-    // Limit iris movement
-    //------------------------------------
 
-    float distance = sqrtf(pupilX * pupilX + pupilY * pupilY);
+    //-----------------------------------------------
+    // Maximum Eye Movement
+    //-----------------------------------------------
 
-    const float maxDistance =
-        (float)(IRIS_RADIUS - PUPIL_RADIUS - 2);
+    constexpr float maxDistance =
+        static_cast<float>(
+            IRIS_RADIUS
+            -
+            PUPIL_RADIUS
+            -
+            2
+        );
 
-    if(distance > maxDistance)
+    constexpr float maxDistanceSquared =
+        maxDistance * maxDistance;
+
+
+    //-----------------------------------------------
+    // Limit Movement
+    //-----------------------------------------------
+
+    const float distanceSquared =
+        pupilX * pupilX +
+        pupilY * pupilY;
+
+
+    if (
+        distanceSquared >
+        maxDistanceSquared
+    )
     {
-        pupilX *= maxDistance / distance;
-        pupilY *= maxDistance / distance;
+        const float scale =
+            maxDistance /
+            sqrtf(distanceSquared);
+
+        pupilX *= scale;
+        pupilY *= scale;
     }
 
-    int irisX = CENTER_X + (int)roundf(pupilX);
-    int irisY = CENTER_Y + (int)roundf(pupilY);
+
+    //-----------------------------------------------
+    // Eye Position
+    //-----------------------------------------------
+
+    const int irisX =
+        CENTER_X +
+        static_cast<int>(
+            roundf(pupilX)
+        );
+
+    const int irisY =
+        CENTER_Y +
+        static_cast<int>(
+            roundf(pupilY)
+        );
+
+
+    //-----------------------------------------------
+    // Draw Iris
+    //-----------------------------------------------
 
     drawIris(
         irisX,
         irisY
     );
 
+
+    //-----------------------------------------------
+    // Draw Pupil
+    //-----------------------------------------------
+
     drawPupil(
         irisX,
         irisY
     );
+
+
+    //-----------------------------------------------
+    // Highlights
+    //-----------------------------------------------
 
     drawHighlights(
         irisX,
         irisY
     );
 
+
+    //-----------------------------------------------
+    // Blink
+    //-----------------------------------------------
+
     drawBlink(
         blinkHeight
     );
 
+
+    //-----------------------------------------------
+    // Update OLED
+    //-----------------------------------------------
+
     show();
 }
 
+
 //====================================================
-// Eyeball
+// Main Eye Housing
 //====================================================
 
 void Graphics::drawEyeball()
 {
-    oled->fillCircle(
+    //-----------------------------------------------
+    // BLACK SCREEN
+    //-----------------------------------------------
+
+    oled->clear();
+
+
+    //-----------------------------------------------
+    // THICK OUTER CIRCULAR RING
+    //-----------------------------------------------
+    //
+    // 5 pixel thick
+    //
+    //-----------------------------------------------
+
+    oled->drawCircle(
         CENTER_X,
         CENTER_Y,
         EYE_RADIUS,
@@ -88,62 +205,168 @@ void Graphics::drawEyeball()
     oled->drawCircle(
         CENTER_X,
         CENTER_Y,
-        EYE_RADIUS,
+        EYE_RADIUS - 1,
         true
     );
+
+    oled->drawCircle(
+        CENTER_X,
+        CENTER_Y,
+        EYE_RADIUS - 2,
+        true
+    );
+
+    oled->drawCircle(
+        CENTER_X,
+        CENTER_Y,
+        EYE_RADIUS - 3,
+        true
+    );
+
+    oled->drawCircle(
+        CENTER_X,
+        CENTER_Y,
+        EYE_RADIUS - 4,
+        true
+    );
+
+
+    //-----------------------------------------------
+    // Cut Inner Area Back To BLACK
+    //-----------------------------------------------
+
+    const int innerRadius =
+        EYE_RADIUS - 6;
+
+
+    oled->fillCircle(
+        CENTER_X,
+        CENTER_Y,
+        innerRadius,
+        false
+    );
 }
+
 
 //====================================================
 // Iris
 //====================================================
 
-void Graphics::drawIris(int x, int y)
+void Graphics::drawIris(
+    int x,
+    int y
+)
 {
-    oled->fillCircle(
+    //-----------------------------------------------
+    // THICK OUTER IRIS RING
+    //-----------------------------------------------
+
+    oled->drawCircle(
         x,
         y,
         IRIS_RADIUS,
+        true
+    );
+
+    oled->drawCircle(
+        x,
+        y,
+        IRIS_RADIUS - 1,
+        true
+    );
+
+    oled->drawCircle(
+        x,
+        y,
+        IRIS_RADIUS - 2,
+        true
+    );
+
+
+    //-----------------------------------------------
+    // BLACK IRIS INTERIOR
+    //-----------------------------------------------
+
+    oled->fillCircle(
+        x,
+        y,
+        IRIS_RADIUS - 3,
         false
     );
 
-    drawOuterRing(
-        x,
-        y
-    );
 
-    drawInnerRing(
-        x,
-        y
-    );
+    //-----------------------------------------------
+    // INNER ROBOTIC RING
+    //-----------------------------------------------
 
-    drawGlow(
+    const int ringRadius =
+        PUPIL_RADIUS + 6;
+
+
+    oled->drawCircle(
         x,
         y,
-        IRIS_RADIUS
+        ringRadius,
+        true
     );
+
+    oled->drawCircle(
+        x,
+        y,
+        ringRadius - 1,
+        true
+    );
+
+
+    //-----------------------------------------------
+    // SECOND INNER RING
+    //-----------------------------------------------
+
+    const int secondRing =
+        PUPIL_RADIUS + 10;
+
+
+    oled->drawCircle(
+        x,
+        y,
+        secondRing,
+        true
+    );
+
+
+    //-----------------------------------------------
+    // ROBOTIC RADIAL DETAILS
+    //-----------------------------------------------
 
     drawSpokes(
         x,
         y
     );
 
+
+    //-----------------------------------------------
+    // Minimal Texture
+    //-----------------------------------------------
+
     drawIrisTexture(
         x,
         y
     );
 }
+
+
 //====================================================
 // Pupil
 //====================================================
 
-void Graphics::drawPupil(int x, int y)
+void Graphics::drawPupil(
+    int x,
+    int y
+)
 {
-    oled->fillCircle(
-        x,
-        y,
-        PUPIL_RADIUS,
-        false
-    );
+    //-----------------------------------------------
+    // THICK PUPIL OUTLINE
+    //-----------------------------------------------
 
     oled->drawCircle(
         x,
@@ -151,44 +374,117 @@ void Graphics::drawPupil(int x, int y)
         PUPIL_RADIUS,
         true
     );
+
+    oled->drawCircle(
+        x,
+        y,
+        PUPIL_RADIUS - 1,
+        true
+    );
+
+    oled->drawCircle(
+        x,
+        y,
+        PUPIL_RADIUS - 2,
+        true
+    );
+
+
+    //-----------------------------------------------
+    // BLACK PUPIL CENTER
+    //-----------------------------------------------
+
+    oled->fillCircle(
+        x,
+        y,
+        PUPIL_RADIUS - 3,
+        false
+    );
+
+
+    //-----------------------------------------------
+    // Small Central Core
+    //-----------------------------------------------
+
+    oled->drawCircle(
+        x,
+        y,
+        4,
+        true
+    );
 }
+
 
 //====================================================
 // Highlights
 //====================================================
 
-void Graphics::drawHighlights(int x, int y)
+void Graphics::drawHighlights(
+    int x,
+    int y
+)
 {
-    // Main reflection
+    //-----------------------------------------------
+    // Small Digital Reflection
+    //-----------------------------------------------
+
     oled->fillCircle(
         x - 5,
         y - 5,
-        3,
+        2,
         true
     );
 
-    // Secondary reflection
+
+    //-----------------------------------------------
+    // Tiny Reflection
+    //-----------------------------------------------
+
     oled->fillCircle(
         x + 5,
-        y + 5,
+        y + 4,
         1,
         true
     );
 }
 
+
 //====================================================
 // Blink
 //====================================================
 
-void Graphics::drawBlink(int amount)
+void Graphics::drawBlink(
+    int amount
+)
 {
-    if(amount <= 0)
+    //-----------------------------------------------
+    // Normal Eye
+    //-----------------------------------------------
+
+    if (amount <= 0)
+    {
         return;
+    }
 
-    if(amount > HEIGHT / 2)
-        amount = HEIGHT / 2;
 
-    // Upper eyelid
+    //-----------------------------------------------
+    // Limit Blink
+    //-----------------------------------------------
+
+    const int maxBlink =
+        HEIGHT / 2;
+
+
+    if (amount > maxBlink)
+    {
+        amount = maxBlink;
+    }
+
+
+    //-----------------------------------------------
+    // Upper Black Mask
+    //-----------------------------------------------
+
     oled->fillRect(
         0,
         0,
@@ -197,7 +493,11 @@ void Graphics::drawBlink(int amount)
         false
     );
 
-    // Lower eyelid
+
+    //-----------------------------------------------
+    // Lower Black Mask
+    //-----------------------------------------------
+
     oled->fillRect(
         0,
         HEIGHT - amount,
@@ -207,64 +507,161 @@ void Graphics::drawBlink(int amount)
     );
 }
 
+
 //====================================================
 // Outer Iris Ring
 //====================================================
 
-void Graphics::drawOuterRing(int x, int y)
+void Graphics::drawOuterRing(
+    int x,
+    int y
+)
 {
-    drawCircleRing(
+    //-----------------------------------------------
+    // VERY THICK RING
+    //-----------------------------------------------
+
+    oled->drawCircle(
         x,
         y,
-        IRIS_RADIUS
+        IRIS_RADIUS,
+        true
     );
 
-    drawCircleRing(
+    oled->drawCircle(
         x,
         y,
-        IRIS_RADIUS - 1
+        IRIS_RADIUS - 1,
+        true
+    );
+
+    oled->drawCircle(
+        x,
+        y,
+        IRIS_RADIUS - 2,
+        true
+    );
+
+    oled->drawCircle(
+        x,
+        y,
+        IRIS_RADIUS - 3,
+        true
     );
 }
+
 
 //====================================================
 // Inner Iris Rings
 //====================================================
 
-void Graphics::drawInnerRing(int x, int y)
+void Graphics::drawInnerRing(
+    int x,
+    int y
+)
 {
-    drawCircleRing(
+    const int innerRadius =
+        PUPIL_RADIUS + 4;
+
+
+    oled->drawCircle(
         x,
         y,
-        PUPIL_RADIUS + 2
+        innerRadius,
+        true
     );
 
-    drawCircleRing(
+    oled->drawCircle(
         x,
         y,
-        PUPIL_RADIUS + 4
+        innerRadius - 1,
+        true
     );
 
-    drawCircleRing(
+
+    const int outerInnerRadius =
+        PUPIL_RADIUS + 9;
+
+
+    oled->drawCircle(
         x,
         y,
-        PUPIL_RADIUS + 6
+        outerInnerRadius,
+        true
     );
 }
+
+
 //====================================================
 // Iris Spokes
 //====================================================
 
-void Graphics::drawSpokes(int x, int y)
+void Graphics::drawSpokes(
+    int x,
+    int y
+)
 {
-    for(int angle = 0; angle < 360; angle += 30)
+    constexpr float RAD_PER_DEG =
+        0.017453292519943295f;
+
+
+    const int innerRadius =
+        PUPIL_RADIUS + 5;
+
+
+    const int outerRadius =
+        IRIS_RADIUS - 4;
+
+
+    //-----------------------------------------------
+    // 8 LARGE ROBOTIC SPOKES
+    //-----------------------------------------------
+
+    for (
+        int angle = 0;
+        angle < 360;
+        angle += 45
+    )
     {
-        float rad = angle * (3.14159265f / 180.0f);
+        const float rad =
+            angle * RAD_PER_DEG;
 
-        int x1 = x + (int)(cosf(rad) * (PUPIL_RADIUS + 2));
-        int y1 = y + (int)(sinf(rad) * (PUPIL_RADIUS + 2));
 
-        int x2 = x + (int)(cosf(rad) * (IRIS_RADIUS - 2));
-        int y2 = y + (int)(sinf(rad) * (IRIS_RADIUS - 2));
+        const float c =
+            cosf(rad);
+
+
+        const float s =
+            sinf(rad);
+
+
+        const int x1 =
+            x +
+            static_cast<int>(
+                c * innerRadius
+            );
+
+
+        const int y1 =
+            y +
+            static_cast<int>(
+                s * innerRadius
+            );
+
+
+        const int x2 =
+            x +
+            static_cast<int>(
+                c * outerRadius
+            );
+
+
+        const int y2 =
+            y +
+            static_cast<int>(
+                s * outerRadius
+            );
+
 
         oled->drawLine(
             x1,
@@ -276,23 +673,79 @@ void Graphics::drawSpokes(int x, int y)
     }
 }
 
+
 //====================================================
 // Iris Texture
 //====================================================
 
-void Graphics::drawIrisTexture(int x, int y)
+void Graphics::drawIrisTexture(
+    int x,
+    int y
+)
 {
-    for(int r = PUPIL_RADIUS + 3;
-        r < IRIS_RADIUS;
-        r += 2)
+    //-----------------------------------------------
+    // Mechanical segmented rings
+    //-----------------------------------------------
+
+    const int r1 =
+        PUPIL_RADIUS + 12;
+
+
+    if (r1 < IRIS_RADIUS)
     {
-        drawCircleRing(
+        oled->drawCircle(
             x,
             y,
-            r
+            r1,
+            true
         );
     }
+
+
+    //-----------------------------------------------
+    // Four small mechanical marks
+    //-----------------------------------------------
+
+    const int markRadius =
+        IRIS_RADIUS - 5;
+
+
+    oled->drawLine(
+        x - 3,
+        y - markRadius,
+        x + 3,
+        y - markRadius,
+        true
+    );
+
+
+    oled->drawLine(
+        x - 3,
+        y + markRadius,
+        x + 3,
+        y + markRadius,
+        true
+    );
+
+
+    oled->drawLine(
+        x - markRadius,
+        y - 3,
+        x - markRadius,
+        y + 3,
+        true
+    );
+
+
+    oled->drawLine(
+        x + markRadius,
+        y - 3,
+        x + markRadius,
+        y + 3,
+        true
+    );
 }
+
 
 //====================================================
 // Circle Ring
@@ -301,8 +754,15 @@ void Graphics::drawIrisTexture(int x, int y)
 void Graphics::drawCircleRing(
     int x,
     int y,
-    int radius)
+    int radius
+)
 {
+    if (radius <= 0)
+    {
+        return;
+    }
+
+
     oled->drawCircle(
         x,
         y,
@@ -311,15 +771,21 @@ void Graphics::drawCircleRing(
     );
 }
 
+
 //====================================================
-// Glow
+// Iris Glow
 //====================================================
 
 void Graphics::drawGlow(
     int x,
     int y,
-    int radius)
+    int radius
+)
 {
+    //-----------------------------------------------
+    // THICK GLOW RING
+    //-----------------------------------------------
+
     oled->drawCircle(
         x,
         y,
@@ -330,14 +796,14 @@ void Graphics::drawGlow(
     oled->drawCircle(
         x,
         y,
-        radius + 1,
+        radius - 1,
         true
     );
 
     oled->drawCircle(
         x,
         y,
-        radius + 2,
+        radius - 2,
         true
     );
 }

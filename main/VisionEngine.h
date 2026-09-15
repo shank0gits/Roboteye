@@ -5,6 +5,7 @@
 
 #include "CameraEngine.h"
 #include "FaceTracker.h"
+#include "EyeEngine.h"
 
 class VisionEngine
 {
@@ -16,7 +17,8 @@ public:
 
     VisionEngine(
         CameraEngine& camera,
-        FaceTracker& tracker
+        FaceTracker& tracker,
+        EyeEngine& eye
     );
 
     //---------------------------------------
@@ -66,6 +68,8 @@ private:
     CameraEngine& camera;
 
     FaceTracker& tracker;
+
+    EyeEngine& eye;
 
     //---------------------------------------
     // Status

@@ -14,6 +14,7 @@ public:
 
     CameraEngine();
 
+
     //---------------------------------------
     // Camera Control
     //---------------------------------------
@@ -22,19 +23,23 @@ public:
 
     bool isReady() const;
 
-   //---------------------------------------
-   // Update
-   //---------------------------------------
 
-     void update();
+    //---------------------------------------
+    // Update
+    //---------------------------------------
 
-   //---------------------------------------
-   // Frame Capture
-   //---------------------------------------
+    void update();
 
-   camera_fb_t* captureFrame();
 
-   void releaseFrame(camera_fb_t* frame);
+    //---------------------------------------
+    // Frame Capture
+    //---------------------------------------
+
+    camera_fb_t* captureFrame();
+
+    void releaseFrame(camera_fb_t* frame);
+
+
     //---------------------------------------
     // Camera Information
     //---------------------------------------
@@ -47,28 +52,42 @@ public:
 
     sensor_t* getSensor();
 
+
 private:
+
+    //---------------------------------------
+    // Camera Sensor
+    //---------------------------------------
+
     sensor_t* sensor = nullptr;
+
+
     //---------------------------------------
     // Status
     //---------------------------------------
 
     bool initialized = false;
 
+
     //---------------------------------------
     // Camera Configuration
     //---------------------------------------
 
     camera_config_t config = {};
+
     uint32_t frameCounter = 0;
+
 
     //---------------------------------------
     // Cached Information
     //---------------------------------------
 
     int width = 0;
+
     int height = 0;
+
     pixformat_t pixelFormat = PIXFORMAT_JPEG;
+
 
     //---------------------------------------
     // Internal Functions
