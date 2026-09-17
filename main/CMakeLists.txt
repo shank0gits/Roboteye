@@ -9,6 +9,7 @@ idf_component_register(
         "VisionEngine.cpp"
         "VisionTask.cpp"
         "ServoEngine.cpp"
+        "RobotEyeNetwork.cpp"
 
     INCLUDE_DIRS
         "."
@@ -17,4 +18,10 @@ idf_component_register(
         esp32-camera
         human_face_detect
         human_face_recognition
+        esp_http_server
+        esp_wifi
+        esp_netif
+        esp_event
+        mdns
+        nvs_flash
 )

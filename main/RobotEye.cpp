@@ -5,6 +5,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
@@ -16,6 +17,7 @@
 #include "VisionEngine.h"
 #include "VisionTask.h"
 #include "ServoEngine.h"
+#include "RobotEyeNetwork.h"
 
 
 //==================================================
@@ -44,6 +46,18 @@
 #define WAKE_GPIO         ((gpio_num_t)19)
 
 
+//==================================================
+// Wake Settings
+//==================================================
+
+// GPIO19 HIGH duration when wake is triggered
+#define WAKE_PULSE_MS     190
+
+// Wake lock duration
+// After 2 minutes another wake can happen
+#define WAKE_RESET_MS     120000
+
+
 static const char* TAG =
     "RobotEye";
 
@@ -54,6 +68,14 @@ static const char* TAG =
 
 i2c_master_bus_handle_t busHandle =
     nullptr;
+
+static esp_timer_handle_t wakePulseTimer = nullptr;
+
+static void endWakePulse(void*)
+{
+    gpio_set_level(WAKE_GPIO, 0);
+    ESP_LOGI(TAG, "WAKE PULSE COMPLETE -> GPIO19 LOW");
+}
 
 
 //==================================================
@@ -132,17 +154,22 @@ void app_main(
 
     gpio_config_t wake_config = {};
 
+
     wake_config.pin_bit_mask =
         (1ULL << WAKE_GPIO);
+
 
     wake_config.mode =
         GPIO_MODE_OUTPUT;
 
+
     wake_config.pull_up_en =
         GPIO_PULLUP_DISABLE;
 
+
     wake_config.pull_down_en =
         GPIO_PULLDOWN_DISABLE;
+
 
     wake_config.intr_type =
         GPIO_INTR_DISABLE;
@@ -155,11 +182,19 @@ void app_main(
     );
 
 
-    // Keep wake signal LOW during boot
+    //--------------------------------------------------
+    // Keep GPIO19 LOW at boot
+    //--------------------------------------------------
+
     gpio_set_level(
         WAKE_GPIO,
         0
     );
+
+    esp_timer_create_args_t wake_timer_args = {};
+    wake_timer_args.callback = &endWakePulse;
+    wake_timer_args.name = "wake_pulse";
+    ESP_ERROR_CHECK(esp_timer_create(&wake_timer_args, &wakePulseTimer));
 
 
     ESP_LOGI(
@@ -178,17 +213,22 @@ void app_main(
     bus_config.i2c_port =
         I2C_PORT;
 
+
     bus_config.sda_io_num =
         SDA_PIN;
+
 
     bus_config.scl_io_num =
         SCL_PIN;
 
+
     bus_config.clk_source =
         I2C_CLK_SRC_DEFAULT;
 
+
     bus_config.glitch_ignore_cnt =
         7;
+
 
     bus_config.flags.enable_internal_pullup =
         true;
@@ -312,7 +352,6 @@ void app_main(
         "Starting Camera..."
     );
 
-
     if (
         !camera.begin()
     )
@@ -338,6 +377,10 @@ void app_main(
         TAG,
         "Camera Ready"
     );
+
+    // Start the optional Wi-Fi camera service only after the camera is ready.
+    // The existing face tracking and GPIO wake path remain unchanged.
+    RobotEyeNetworkStart();
 
 
     //--------------------------------------------------
@@ -423,15 +466,18 @@ void app_main(
         "================================"
     );
 
+
     ESP_LOGI(
         TAG,
         "Robot Eye System Ready"
     );
 
+
     ESP_LOGI(
         TAG,
         "Face Tracking Active"
     );
+
 
     ESP_LOGI(
         TAG,
@@ -439,11 +485,13 @@ void app_main(
         PAN_SERVO_PIN
     );
 
+
     ESP_LOGI(
         TAG,
         "Tilt Servo GPIO : %d",
         TILT_SERVO_PIN
     );
+
 
     ESP_LOGI(
         TAG,
@@ -451,95 +499,107 @@ void app_main(
         WAKE_GPIO
     );
 
+
+    ESP_LOGI(
+        TAG,
+        "Wake Pulse      : %d ms",
+        WAKE_PULSE_MS
+    );
+
+
+    ESP_LOGI(
+        TAG,
+        "Wake Reset      : %d ms",
+        WAKE_RESET_MS
+    );
+
+
     ESP_LOGI(
         TAG,
         "================================"
     );
 
 
-    //--------------------------------------------------
-    // Face State
-    //--------------------------------------------------
+    //==================================================
+    // Wake State
+    //==================================================
 
-    static bool previousFaceState =
+    // True after a wake has been triggered.
+    // Prevents repeated triggers while locked.
+    static bool wakeTriggered =
         false;
 
 
-    //--------------------------------------------------
+    // True after a face-triggered wake until the face has been gone for the
+    // full reset interval.
+    static bool faceGoneTimerActive = false;
+    static TickType_t faceGoneStart = 0;
+
+
+    //==================================================
     // Main Loop
-    //--------------------------------------------------
+    //==================================================
 
     while (true)
     {
         //------------------------------------------------
-        // Read current face state
+        // Current Face State
         //------------------------------------------------
 
         const bool currentFaceState =
             tracker.faceDetected();
 
+        RobotEyeNetworkSetFacePresent(currentFaceState);
 
-        //------------------------------------------------
-        // Face State Changed
-        //------------------------------------------------
 
-        if (
-            currentFaceState !=
-            previousFaceState
-        )
+        //================================================
+        // FACE DETECTED
+        //================================================
+        //
+        // Only triggers if wakeTriggered == false.
+        //
+        // Face gone is NOT used for resetting.
+        //
+        // The reset happens only after 2 minutes.
+        //================================================
+
+        if (currentFaceState)
         {
-            //------------------------------------------------
-            // Face Detected
-            //------------------------------------------------
+            // A returning face cancels the gone timer but does not retrigger.
+            faceGoneTimerActive = false;
 
-            if (currentFaceState)
+            if (!wakeTriggered)
             {
-                // Send HIGH to Brain GPIO1
-                gpio_set_level(
-                    WAKE_GPIO,
-                    1
-                );
-
-
-                ESP_LOGI(
-                    TAG,
-                    "FACE DETECTED -> GPIO19 HIGH -> BRAIN WAKE"
-                );
+                gpio_set_level(WAKE_GPIO, 1);
+                ESP_ERROR_CHECK(esp_timer_start_once(
+                    wakePulseTimer,
+                    WAKE_PULSE_MS * 1000ULL
+                ));
+                wakeTriggered = true;
+                ESP_LOGI(TAG, "FACE DETECTED -> GPIO19 HIGH for %d ms", WAKE_PULSE_MS);
             }
-
-
-            //------------------------------------------------
-            // Face Lost
-            //------------------------------------------------
-
-            else
+        }
+        else if (wakeTriggered)
+        {
+            if (!faceGoneTimerActive)
             {
-                // Return wake signal LOW
-                gpio_set_level(
-                    WAKE_GPIO,
-                    0
-                );
-
-
-                ESP_LOGI(
-                    TAG,
-                    "FACE LOST -> GPIO19 LOW"
-                );
+                faceGoneTimerActive = true;
+                faceGoneStart = xTaskGetTickCount();
+                ESP_LOGI(TAG, "FACE GONE -> reset timer started");
             }
-
-
-            //------------------------------------------------
-            // Save current state
-            //------------------------------------------------
-
-            previousFaceState =
-                currentFaceState;
+            else if (xTaskGetTickCount() - faceGoneStart >= pdMS_TO_TICKS(WAKE_RESET_MS))
+            {
+                gpio_set_level(WAKE_GPIO, 0);
+                wakeTriggered = false;
+                faceGoneTimerActive = false;
+                ESP_LOGI(TAG, "FACE GONE for 2 minutes -> wake reset");
+            }
         }
 
 
-        //------------------------------------------------
-        // Face Found
-        //------------------------------------------------
+        //================================================
+        // EXISTING FACE TRACKING
+        //================================================
 
         if (
             tracker.faceDetected()
@@ -551,6 +611,7 @@ void app_main(
 
             const float faceX =
                 tracker.getEyeX();
+
 
             const float faceY =
                 tracker.getEyeY();
@@ -577,9 +638,9 @@ void app_main(
         }
 
 
-        //------------------------------------------------
-        // Face Lost
-        //------------------------------------------------
+        //================================================
+        // FACE LOST
+        //================================================
 
         else
         {
@@ -598,30 +659,30 @@ void app_main(
         }
 
 
-        //------------------------------------------------
+        //================================================
         // Update OLED Eye
-        //------------------------------------------------
+        //================================================
 
         eye.update();
 
 
-        //------------------------------------------------
+        //================================================
         // Draw OLED Eye
-        //------------------------------------------------
+        //================================================
 
         eye.draw();
 
 
-        //------------------------------------------------
+        //================================================
         // Update Servos
-        //------------------------------------------------
+        //================================================
 
         servos.update();
 
 
-        //------------------------------------------------
+        //================================================
         // 50 FPS Main Loop
-        //------------------------------------------------
+        //================================================
 
         vTaskDelay(
             pdMS_TO_TICKS(

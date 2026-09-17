@@ -13,7 +13,7 @@
   "clangd.arguments": [
     "--background-index",
     "--query-driver=**",
-    "--compile-commands-dir=c:\\Roboteye\\build"
+    "--compile-commands-dir=c:\\m5\\Roboteye\\build"
   ],
   "idf.flashType": "UART"
 }

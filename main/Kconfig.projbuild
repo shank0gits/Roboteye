@@ -1,0 +1,11 @@
+menu "Roboteye network"
+
+config ROBOTEYE_WIFI_SSID
+    string "Roboteye Wi-Fi SSID"
+    default ""
+
+config ROBOTEYE_WIFI_PASSWORD
+    string "Roboteye Wi-Fi password"
+    default ""
+
+endmenu

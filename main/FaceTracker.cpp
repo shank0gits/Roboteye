@@ -199,6 +199,9 @@ bool FaceTracker::processFrame(
     // Decode JPEG
     //-----------------------------------------------
 
+    // Use the software decoder here. The ESP-DL hardware JPEG API is only
+    // available when CONFIG_SOC_JPEG_CODEC_SUPPORTED is enabled, while this
+    // component also builds for ESP32-S3 configurations without that codec.
     dl::image::img_t image =
         dl::image::sw_decode_jpeg(
             jpegImage,
