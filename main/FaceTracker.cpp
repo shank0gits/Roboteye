@@ -356,6 +356,22 @@ bool FaceTracker::processFrame(
         decodedHeight
     );
 
+    // Smooth detector noise before sending the target to the eye and motor.
+    constexpr float TRACKING_ALPHA = 0.28f;
+    if (!hasFilteredEye)
+    {
+        filteredEyeX = eyeX;
+        filteredEyeY = eyeY;
+        hasFilteredEye = true;
+    }
+    else
+    {
+        filteredEyeX += (eyeX - filteredEyeX) * TRACKING_ALPHA;
+        filteredEyeY += (eyeY - filteredEyeY) * TRACKING_ALPHA;
+    }
+    eyeX = filteredEyeX;
+    eyeY = filteredEyeY;
+
 
     //-----------------------------------------------
     // Debug
@@ -509,6 +525,9 @@ void FaceTracker::reset()
 
     eyeX = 0.0f;
     eyeY = 0.0f;
+    filteredEyeX = 0.0f;
+    filteredEyeY = 0.0f;
+    hasFilteredEye = false;
 }
 
 

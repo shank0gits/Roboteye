@@ -2,6 +2,7 @@
 #define CAMERA_ENGINE_H
 
 #include <cstdint>
+#include <mutex>
 #include "esp_camera.h"
 
 class CameraEngine
@@ -76,6 +77,10 @@ private:
     camera_config_t config = {};
 
     uint32_t frameCounter = 0;
+
+    // Vision processing and the HTTP capture endpoint share the single
+    // camera frame buffer. Serialize both users to prevent FB-OVF.
+    std::timed_mutex frame_mutex;
 
 
     //---------------------------------------

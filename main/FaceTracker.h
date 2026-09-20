@@ -95,6 +95,12 @@ private:
 
     float eyeY = 0.0f;
 
+    float filteredEyeX = 0.0f;
+
+    float filteredEyeY = 0.0f;
+
+    bool hasFilteredEye = false;
+
     //---------------------------------------
     // Internal Functions
     //---------------------------------------

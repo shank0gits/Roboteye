@@ -16,8 +16,9 @@
 #include "FaceTracker.h"
 #include "VisionEngine.h"
 #include "VisionTask.h"
-#include "ServoEngine.h"
+#include "MotorEngine.h"
 #include "RobotEyeNetwork.h"
+#include "SdCardTest.h"
 
 
 //==================================================
@@ -31,11 +32,11 @@
 
 
 //--------------------------------------------------
-// Servo GPIO
+// Pan left/right H-bridge motor-driver GPIO
 //--------------------------------------------------
 
-#define PAN_SERVO_PIN     ((gpio_num_t)20)
-#define TILT_SERVO_PIN    ((gpio_num_t)21)
+#define MOTOR_A_1A_PIN    ((gpio_num_t)42)
+#define MOTOR_A_1B_PIN    ((gpio_num_t)41)
 
 
 //--------------------------------------------------
@@ -113,12 +114,12 @@ VisionTask visionTask(
 
 
 //==================================================
-// Servo Engine
+// Pan Motor Engine
 //==================================================
 
-ServoEngine servos(
-    PAN_SERVO_PIN,
-    TILT_SERVO_PIN
+MotorEngine motors(
+    MOTOR_A_1A_PIN,
+    MOTOR_A_1B_PIN
 );
 
 
@@ -312,17 +313,17 @@ void app_main(
 
     ESP_LOGI(
         TAG,
-        "Starting Servo Engine..."
+        "Starting Motor Engine..."
     );
 
 
     if (
-        !servos.begin()
+        !motors.begin()
     )
     {
         ESP_LOGE(
             TAG,
-            "Servo Engine initialization failed!"
+            "Motor Engine initialization failed!"
         );
 
 
@@ -339,7 +340,7 @@ void app_main(
 
     ESP_LOGI(
         TAG,
-        "Servo Engine Started"
+        "Motor Engine Started"
     );
 
 
@@ -377,6 +378,8 @@ void app_main(
         TAG,
         "Camera Ready"
     );
+
+    RobotEyeSdCardTest();
 
     // Start the optional Wi-Fi camera service only after the camera is ready.
     // The existing face tracking and GPIO wake path remain unchanged.
@@ -481,16 +484,13 @@ void app_main(
 
     ESP_LOGI(
         TAG,
-        "Pan Servo GPIO  : %d",
-        PAN_SERVO_PIN
+        "Motor A GPIOs  : %d / %d",
+        MOTOR_A_1A_PIN,
+        MOTOR_A_1B_PIN
     );
 
 
-    ESP_LOGI(
-        TAG,
-        "Tilt Servo GPIO : %d",
-        TILT_SERVO_PIN
-    );
+    ESP_LOGI(TAG, "Tilt motor     : not configured");
 
 
     ESP_LOGI(
@@ -631,7 +631,7 @@ void app_main(
             // Move Pan + Tilt Servos
             //--------------------------------------------
 
-            servos.setTarget(
+            motors.setTarget(
                 faceX,
                 faceY
             );
@@ -655,7 +655,7 @@ void app_main(
             // Center Servos Smoothly
             //--------------------------------------------
 
-            servos.center();
+            motors.center();
         }
 
 
@@ -677,7 +677,7 @@ void app_main(
         // Update Servos
         //================================================
 
-        servos.update();
+        motors.update();
 
 
         //================================================

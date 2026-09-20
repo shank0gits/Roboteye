@@ -43,6 +43,12 @@ void EyeEngine::begin()
 
     blinking = false;
 
+    blinkOpening = false;
+
+    blinkStepAt = millis();
+
+    blinkHoldUntil = 0;
+
     blinkHeight = 0;
 }
 
@@ -159,7 +165,14 @@ void EyeEngine::enableIdle(
 
 void EyeEngine::blink()
 {
-    blinking = true;
+    if (!blinking)
+    {
+        blinking = true;
+        blinkOpening = false;
+        blinkHeight = 0;
+        blinkStepAt = millis();
+        blinkHoldUntil = 0;
+    }
 }
 
 
@@ -174,7 +187,7 @@ void EyeEngine::smoothMovement()
     //-----------------------------------------------
 
     const float speed = tracking
-        ? 0.22f
+        ? 0.18f
         : 0.15f;
 
 
@@ -298,56 +311,29 @@ void EyeEngine::update()
 
     if (blinking)
     {
-        //-------------------------------------------
-        // Close Eye
-        //-------------------------------------------
-
-        blinkHeight += 4;
-
-        if (blinkHeight >= 32)
+        // Non-blocking blink: do not pause face tracking while the eyelid
+        // closes and opens.
+        const unsigned long now = millis();
+        if (!blinkOpening && now - blinkStepAt >= 15)
         {
-            blinkHeight = 32;
-        }
-
-
-        //-------------------------------------------
-        // Fully Closed
-        //-------------------------------------------
-
-        if (blinkHeight == 32)
-        {
-            delay(40);
-
-
-            //---------------------------------------
-            // Open Eye
-            //---------------------------------------
-
-            while (blinkHeight > 0)
+            blinkHeight = min(32, blinkHeight + 4);
+            blinkStepAt = now;
+            if (blinkHeight >= 32)
             {
-                blinkHeight -= 4;
-
-
-                graphics.drawEye(
-                    pupilX,
-                    pupilY,
-                    blinkHeight
-                );
-
-
-                delay(15);
+                blinkOpening = true;
+                blinkHoldUntil = now + 40;
             }
-
-
-            //---------------------------------------
-            // Blink Complete
-            //---------------------------------------
-
-            blinkHeight = 0;
-
-            blinking = false;
-
-            lastBlink = millis();
+        }
+        else if (blinkOpening && now >= blinkHoldUntil && now - blinkStepAt >= 15)
+        {
+            blinkHeight = max(0, blinkHeight - 4);
+            blinkStepAt = now;
+            if (blinkHeight == 0)
+            {
+                blinking = false;
+                blinkOpening = false;
+                lastBlink = now;
+            }
         }
     }
 }

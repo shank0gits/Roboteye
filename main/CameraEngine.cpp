@@ -1,4 +1,5 @@
 #include "CameraEngine.h"
+#include <chrono>
 
 #include "esp_log.h"
 #include "esp_camera.h"
@@ -187,12 +188,12 @@ void CameraEngine::setupConfig()
     // Frame Buffers
     //-----------------------------------------------
     //
-    // Two buffers allow the camera to continue
-    // capturing while the vision system processes
-    // the previous frame.
+    // Face detection decodes JPEG in software and is slower than the
+    // camera's capture cadence. One buffer prevents the DMA/frame queue from
+    // overrunning while the vision task owns the current frame.
     //
 
-    config.fb_count = 2;
+    config.fb_count = 1;
 
 
     //-----------------------------------------------
@@ -210,12 +211,11 @@ void CameraEngine::setupConfig()
     // Frame Grab Mode
     //-----------------------------------------------
     //
-    // Always keep the newest frame available.
-    //
-    // This is important for real-time face tracking.
+    // Wait for the current frame to be returned before capturing another one.
+    // This avoids cam_hal FB-OVF and false face-lost events.
     //
 
-    config.grab_mode = CAMERA_GRAB_LATEST;
+    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
 
 
     //-----------------------------------------------
@@ -228,7 +228,7 @@ void CameraEngine::setupConfig()
     ESP_LOGI(TAG, "Frame Buffers : %d", config.fb_count);
     ESP_LOGI(TAG, "JPEG Quality  : %d", config.jpeg_quality);
     ESP_LOGI(TAG, "Frame Buffer  : PSRAM");
-    ESP_LOGI(TAG, "Grab Mode     : LATEST");
+    ESP_LOGI(TAG, "Grab Mode     : WHEN_EMPTY");
 }
 
 
@@ -417,6 +417,12 @@ camera_fb_t* CameraEngine::captureFrame()
         return nullptr;
     }
 
+    // Do not block an HTTP request indefinitely behind face processing.
+    if (!frame_mutex.try_lock_for(std::chrono::milliseconds(250)))
+    {
+        return nullptr;
+    }
+
 
     //-----------------------------------------------
     // Capture Latest Frame
@@ -437,6 +443,7 @@ camera_fb_t* CameraEngine::captureFrame()
             "Camera frame capture failed"
         );
 
+        frame_mutex.unlock();
         return nullptr;
     }
 
@@ -463,6 +470,7 @@ void CameraEngine::releaseFrame(
     if (frame != nullptr)
     {
         esp_camera_fb_return(frame);
+        frame_mutex.unlock();
     }
 }
 

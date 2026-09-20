@@ -131,6 +131,12 @@ private:
 
     bool blinking = false;
 
+    bool blinkOpening = false;
+
+    unsigned long blinkStepAt = 0;
+
+    unsigned long blinkHoldUntil = 0;
+
 
     //------------------------------------
     // Idle

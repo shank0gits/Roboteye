@@ -8,8 +8,9 @@ idf_component_register(
         "FaceTracker.cpp"
         "VisionEngine.cpp"
         "VisionTask.cpp"
-        "ServoEngine.cpp"
+        "MotorEngine.cpp"
         "RobotEyeNetwork.cpp"
+        "SdCardTest.cpp"
 
     INCLUDE_DIRS
         "."
@@ -24,4 +25,7 @@ idf_component_register(
         esp_event
         mdns
         nvs_flash
+        fatfs
+        sdmmc
+        esp_driver_sdmmc
 )
